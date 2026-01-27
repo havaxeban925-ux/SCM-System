@@ -1,0 +1,372 @@
+
+import React, { useState } from 'react';
+import { AppView, StyleItem } from './types';
+import StyleWorkbench from './pages/StyleWorkbench';
+import RequestWorkbench from './pages/RequestWorkbench';
+import ReplenishmentSynergy from './pages/ReplenishmentSynergy';
+import DevelopmentProgress from './pages/DevelopmentProgress';
+import QuotationDrawer from './components/QuotationDrawer';
+import { PRIVATE_STYLES, MOCK_DEVELOPMENT_STYLES } from './constants';
+
+// 模拟消息
+const MOCK_MESSAGES = [
+  { id: '1', title: '款式进入开发环节', content: 'S20060 已进入开发环节', time: '10分钟前', read: false, targetView: AppView.DEVELOPMENT_PROGRESS },
+  { id: '2', title: '补货单待处理', content: 'SKC-202401-001 待确认接单', time: '1小时前', read: false, targetView: AppView.REPLENISHMENT },
+  { id: '3', title: '核价申请已通过', content: '您的报价单申请已通过审核', time: '2小时前', read: true, targetView: AppView.REQUEST_WORKBENCH },
+];
+
+// 登录视图组件
+const LoginView: React.FC<{ onLogin: () => void }> = ({ onLogin }) => {
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (username && password) {
+      onLogin();
+    } else {
+      alert('请输入用户名和密码');
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-[#001529] via-[#003366] to-[#004d80] flex items-center justify-center p-6">
+      <div className="w-full max-w-md">
+        <div className="bg-white rounded-2xl shadow-2xl p-8">
+          <div className="text-center mb-8">
+            <div className="inline-flex items-center justify-center w-16 h-16 bg-primary/10 rounded-xl mb-4">
+              <span className="material-symbols-outlined text-primary text-3xl">style</span>
+            </div>
+            <h1 className="text-2xl font-black text-navy-700">小铃子组业务协同系统</h1>
+            <p className="text-sm text-slate-500 mt-2">SCM - Supply Chain Management</p>
+          </div>
+          <form onSubmit={handleSubmit} className="space-y-5">
+            <div>
+              <label className="block text-xs font-bold text-slate-500 mb-2">用户名</label>
+              <input
+                type="text"
+                className="w-full h-12 px-4 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
+                placeholder="请输入用户名"
+                value={username}
+                onChange={e => setUsername(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-500 mb-2">密码</label>
+              <input
+                type="password"
+                className="w-full h-12 px-4 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
+                placeholder="请输入密码"
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+              />
+            </div>
+            <button
+              type="submit"
+              className="w-full h-12 bg-primary text-white rounded-lg text-sm font-bold hover:bg-blue-600 transition-colors shadow-lg shadow-primary/30"
+            >
+              登 录
+            </button>
+          </form>
+          <p className="text-center text-xs text-slate-400 mt-6">© 2024 SCM System. All Rights Reserved.</p>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const App: React.FC = () => {
+  const [isLoggedIn, setIsLoggedIn] = useState(true); // 默认已登录（开发模式）
+  const [currentView, setCurrentView] = useState<AppView>(AppView.STYLE_WORKBENCH);
+  const [showQuotationDrawer, setShowQuotationDrawer] = useState(false);
+
+  // 消息通知 Popover 状态
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [messages, setMessages] = useState(MOCK_MESSAGES);
+
+  // 用户菜单 Popover 状态
+  const [showUserMenu, setShowUserMenu] = useState(false);
+
+  // 店铺信息管理 Modal 状态
+  const [showShopModal, setShowShopModal] = useState(false);
+  const [shopInfo, setShopInfo] = useState({
+    shopId: 'SHOP-001',
+    shopName: '小铃子专营店',
+    contact: '张经理',
+    phone: '138****8888',
+  });
+
+  const [stylesInDevelopment, setStylesInDevelopment] = useState<StyleItem[]>(MOCK_DEVELOPMENT_STYLES);
+  const [availableStyles, setAvailableStyles] = useState<StyleItem[]>(PRIVATE_STYLES);
+
+  const handleConfirmStyle = (style: StyleItem) => {
+    setAvailableStyles(prev => prev.filter(s => s.id !== style.id));
+    setStylesInDevelopment(prev => [
+      ...prev,
+      { ...style, status: 'developing', developmentStatus: 'drafting' }
+    ]);
+    setCurrentView(AppView.DEVELOPMENT_PROGRESS);
+  };
+
+  const handleUpdateDevStatus = (id: string, newStatus: StyleItem['developmentStatus']) => {
+    setStylesInDevelopment(prev => prev.map(s => s.id === id ? { ...s, developmentStatus: newStatus } : s));
+    if (newStatus === 'success') {
+      setTimeout(() => {
+        setStylesInDevelopment(prev => prev.filter(s => s.id !== id));
+      }, 5000);
+    }
+  };
+
+  const handleAbandonDevelopment = (id: string) => {
+    const styleToReturn = stylesInDevelopment.find(s => s.id === id);
+    if (styleToReturn) {
+      setStylesInDevelopment(prev => prev.filter(s => s.id !== id));
+      setAvailableStyles(prev => [...prev, { ...styleToReturn, status: 'new' }]);
+    }
+  };
+
+  const handleLogout = () => {
+    setIsLoggedIn(false);
+    setShowUserMenu(false);
+  };
+
+  const unreadCount = messages.filter(m => !m.read).length;
+
+  const markAllAsRead = () => {
+    setMessages(messages.map(m => ({ ...m, read: true })));
+  };
+
+  // 如果未登录，显示登录页
+  if (!isLoggedIn) {
+    return <LoginView onLogin={() => setIsLoggedIn(true)} />;
+  }
+
+  const Header: React.FC = () => (
+    <header className="sticky top-0 z-[60] bg-[#001529] border-b border-slate-700 px-6 lg:px-12 py-3">
+      <div className="max-w-[1440px] mx-auto flex items-center justify-between">
+        <div className="flex items-center gap-10">
+          <div className="flex items-center gap-3">
+            <div className="bg-white/10 p-1.5 rounded text-white">
+              <span className="material-symbols-outlined text-2xl">style</span>
+            </div>
+            <h1 className="text-white text-lg font-bold tracking-tight">小铃子组业务协同系统</h1>
+          </div>
+          <nav className="hidden md:flex items-center gap-8">
+            <button
+              onClick={() => setCurrentView(AppView.STYLE_WORKBENCH)}
+              className={`text-sm transition-colors ${currentView === AppView.STYLE_WORKBENCH ? 'text-primary border-b-2 border-primary pb-3 -mb-3.5 font-bold' : 'text-slate-400 hover:text-white font-medium'}`}
+            >
+              接款开发
+            </button>
+            <button
+              onClick={() => setCurrentView(AppView.DEVELOPMENT_PROGRESS)}
+              className={`text-sm transition-colors ${currentView === AppView.DEVELOPMENT_PROGRESS ? 'text-primary border-b-2 border-primary pb-3 -mb-3.5 font-bold' : 'text-slate-400 hover:text-white font-medium'}`}
+            >
+              开发进度
+            </button>
+            <button
+              onClick={() => setCurrentView(AppView.REQUEST_WORKBENCH)}
+              className={`text-sm transition-colors ${currentView === AppView.REQUEST_WORKBENCH ? 'text-primary border-b-2 border-primary pb-3 -mb-3.5 font-bold' : 'text-slate-400 hover:text-white font-medium'}`}
+            >
+              发起申请
+            </button>
+            <button
+              onClick={() => setCurrentView(AppView.REPLENISHMENT)}
+              className={`text-sm transition-colors ${currentView === AppView.REPLENISHMENT ? 'text-primary border-b-2 border-primary pb-3 -mb-3.5 font-bold' : 'text-slate-400 hover:text-white font-medium'}`}
+            >
+              补货协同
+            </button>
+          </nav>
+        </div>
+        <div className="flex items-center gap-6">
+          <div className="flex items-center gap-4 border-l border-white/20 pl-6">
+            {/* 消息通知小铃铛 */}
+            <div className="relative">
+              <button
+                onClick={() => { setShowNotifications(!showNotifications); setShowUserMenu(false); }}
+                className="material-symbols-outlined text-slate-400 cursor-pointer hover:text-white transition-colors p-2 hover:bg-white/10 rounded-full relative"
+              >
+                notifications
+                {unreadCount > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center">
+                    {unreadCount}
+                  </span>
+                )}
+              </button>
+              {/* 消息 Popover */}
+              {showNotifications && (
+                <div className="absolute right-0 top-full mt-2 w-80 bg-white rounded-xl shadow-2xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+                  <div className="px-4 py-3 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
+                    <span className="font-bold text-sm text-navy-700">系统消息</span>
+                    <button onClick={markAllAsRead} className="text-[10px] text-primary hover:underline font-bold">全部已读</button>
+                  </div>
+                  <div className="max-h-[300px] overflow-y-auto">
+                    {messages.map(msg => (
+                      <div
+                        key={msg.id}
+                        className={`px-4 py-3 border-b border-slate-100 hover:bg-slate-50 cursor-pointer ${!msg.read ? 'bg-blue-50/50' : ''}`}
+                        onClick={() => {
+                          // 标记已读
+                          setMessages(prev => prev.map(m => m.id === msg.id ? { ...m, read: true } : m));
+                          // 跳转到对应板块
+                          if (msg.targetView) {
+                            setCurrentView(msg.targetView);
+                            setShowNotifications(false);
+                          }
+                        }}
+                      >
+                        <div className="flex items-start gap-3">
+                          <span className={`material-symbols-outlined text-lg mt-0.5 ${!msg.read ? 'text-primary' : 'text-slate-400'}`}>
+                            {msg.title.includes('开发') ? 'design_services' : msg.title.includes('补货') ? 'inventory' : 'check_circle'}
+                          </span>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-bold text-slate-700 truncate">{msg.title}</p>
+                            <p className="text-xs text-slate-500 mt-0.5">{msg.content}</p>
+                            <p className="text-[10px] text-slate-400 mt-1">{msg.time}</p>
+                          </div>
+                          {!msg.read && <span className="w-2 h-2 bg-primary rounded-full mt-1.5 shrink-0"></span>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="px-4 py-2 border-t border-slate-200 bg-slate-50">
+                    <button className="w-full text-center text-xs text-primary font-bold hover:underline">查看全部消息</button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* 用户菜单 */}
+            <div className="relative">
+              <div
+                onClick={() => { setShowUserMenu(!showUserMenu); setShowNotifications(false); }}
+                className="flex items-center gap-2 cursor-pointer hover:bg-white/10 px-3 py-1.5 rounded transition-colors group"
+              >
+                <span className="material-symbols-outlined text-slate-400 group-hover:text-white text-xl">account_circle</span>
+                <span className="text-xs text-white/80 font-medium">{shopInfo.contact}</span>
+                <span className="material-symbols-outlined text-slate-400 text-sm">expand_more</span>
+              </div>
+              {/* 用户菜单 Popover */}
+              {showUserMenu && (
+                <div className="absolute right-0 top-full mt-2 w-56 bg-white rounded-xl shadow-2xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+                  <div className="px-4 py-3 bg-slate-50 border-b border-slate-200">
+                    <p className="font-bold text-sm text-navy-700">{shopInfo.contact}</p>
+                    <p className="text-xs text-slate-500">{shopInfo.shopName}</p>
+                  </div>
+                  <div className="py-1">
+                    <button
+                      onClick={() => { setShowShopModal(true); setShowUserMenu(false); }}
+                      className="w-full px-4 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-3"
+                    >
+                      <span className="material-symbols-outlined text-lg text-slate-400">store</span>
+                      店铺信息管理
+                    </button>
+                    <button
+                      onClick={handleLogout}
+                      className="w-full px-4 py-2.5 text-left text-sm text-red-600 hover:bg-red-50 flex items-center gap-3"
+                    >
+                      <span className="material-symbols-outlined text-lg text-red-400">logout</span>
+                      退出登录
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </header>
+  );
+
+  return (
+    <div className="flex flex-col min-h-screen" onClick={() => { setShowNotifications(false); setShowUserMenu(false); }}>
+      <div onClick={e => e.stopPropagation()}>
+        <Header />
+      </div>
+      <main className="flex-1 max-w-[1440px] w-full mx-auto px-6 lg:px-12 py-8">
+        {currentView === AppView.STYLE_WORKBENCH && (
+          <StyleWorkbench
+            availableStyles={availableStyles}
+            onConfirmStyle={handleConfirmStyle}
+          />
+        )}
+        {currentView === AppView.DEVELOPMENT_PROGRESS && (
+          <DevelopmentProgress
+            styles={stylesInDevelopment}
+            onAbandon={handleAbandonDevelopment}
+            onUpdateStatus={handleUpdateDevStatus}
+          />
+        )}
+        {currentView === AppView.REQUEST_WORKBENCH && <RequestWorkbench onNewRequest={() => setShowQuotationDrawer(true)} />}
+        {currentView === AppView.REPLENISHMENT && <ReplenishmentSynergy />}
+      </main>
+      <footer className="mt-auto border-t border-slate-200 bg-white px-6 lg:px-12 py-6">
+        <div className="max-w-[1440px] mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
+          <span className="text-xs text-slate-400">© 2024 小铃子组业务协同系统 (SCM).</span>
+          <div className="flex items-center gap-6">
+            <a className="text-xs text-slate-500 hover:text-primary transition-colors" href="#">操作指南</a>
+            <a className="text-xs text-slate-500 hover:text-primary transition-colors" href="#">意见反馈</a>
+          </div>
+        </div>
+      </footer>
+      {showQuotationDrawer && <QuotationDrawer onClose={() => setShowQuotationDrawer(false)} />}
+
+      {/* 店铺信息管理 Modal */}
+      {showShopModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowShopModal(false)}></div>
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95">
+            <div className="px-6 py-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
+              <h3 className="font-bold text-lg text-navy-700">店铺信息管理</h3>
+              <button onClick={() => setShowShopModal(false)} className="material-symbols-outlined text-slate-400 hover:text-slate-600">close</button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-500 mb-2">店铺ID</label>
+                <input
+                  type="text"
+                  className="w-full h-10 px-3 border border-slate-200 rounded-lg text-sm bg-slate-50"
+                  value={shopInfo.shopId}
+                  disabled
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-500 mb-2">店铺名称</label>
+                <input
+                  type="text"
+                  className="w-full h-10 px-3 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+                  value={shopInfo.shopName}
+                  onChange={e => setShopInfo({ ...shopInfo, shopName: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-500 mb-2">联系人</label>
+                <input
+                  type="text"
+                  className="w-full h-10 px-3 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+                  value={shopInfo.contact}
+                  onChange={e => setShopInfo({ ...shopInfo, contact: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-500 mb-2">联系电话</label>
+                <input
+                  type="text"
+                  className="w-full h-10 px-3 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+                  value={shopInfo.phone}
+                  onChange={e => setShopInfo({ ...shopInfo, phone: e.target.value })}
+                />
+              </div>
+            </div>
+            <div className="px-6 py-4 border-t border-slate-200 bg-slate-50 flex justify-end gap-3">
+              <button onClick={() => setShowShopModal(false)} className="px-5 py-2 border border-slate-300 rounded-lg text-sm font-bold text-slate-600 hover:bg-slate-100">取消</button>
+              <button onClick={() => { setShowShopModal(false); alert('保存成功'); }} className="px-5 py-2 bg-primary text-white rounded-lg text-sm font-bold hover:bg-blue-600">保存</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default App;

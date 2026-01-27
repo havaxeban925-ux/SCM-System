@@ -1,0 +1,8 @@
+
+{
+  "name": "Women's Clothing SCM Synergy System",
+  "description": "A professional supply chain management platform for women's fashion, featuring style collaboration, smart quotation generators, and production replenishment tracking.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
