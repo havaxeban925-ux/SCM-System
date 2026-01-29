@@ -1,0 +1,21 @@
+{
+    "name": "scm-test-bot",
+    "version": "1.0.0",
+    "description": "SCM 系统自动化测试机器人",
+    "type": "module",
+    "scripts": {
+        "test": "tsx bot/index.ts",
+        "test:style": "tsx bot/index.ts --module=style",
+        "test:pricing": "tsx bot/index.ts --module=pricing",
+        "test:anomaly": "tsx bot/index.ts --module=anomaly",
+        "test:restock": "tsx bot/index.ts --module=restock",
+        "test:clean": "tsx bot/utils/cleanup.ts"
+    },
+    "dependencies": {
+        "chalk": "^5.3.0"
+    },
+    "devDependencies": {
+        "tsx": "^4.7.0",
+        "@types/node": "^20.10.0"
+    }
+}

@@ -11,7 +11,12 @@
     "preview": "vite preview",
     "test": "vitest",
     "test:run": "vitest run",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "test:bot": "npm -C tests test",
+    "test:bot:style": "npm -C tests run test:style",
+    "test:bot:pricing": "npm -C tests run test:pricing",
+    "test:bot:anomaly": "npm -C tests run test:anomaly",
+    "test:bot:restock": "npm -C tests run test:restock"
   },
   "dependencies": {
     "@google/genai": "^1.38.0",

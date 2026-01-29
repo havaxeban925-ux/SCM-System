@@ -24,6 +24,7 @@ const USER_AVATARS: Record<string, string> = {
     '阿允': '✨',
     '铃酱': '🔔',
     '阿秋': '🍂',
+    'ceshimiziqiu': '🤖', // 测试账号
 };
 
 const App: React.FC = () => {
