@@ -62,8 +62,8 @@ class ApiClient {
     }
 
     // DELETE 请求
-    async delete<T>(path: string): Promise<T> {
-        return this.request<T>('DELETE', path);
+    async delete<T>(path: string, body?: any): Promise<T> {
+        return this.request<T>('DELETE', path, body);
     }
 
     // ========== 款式相关 API ==========
@@ -214,6 +214,11 @@ class ApiClient {
     // 健康检查
     async healthCheck() {
         return this.get('/api/health');
+    }
+
+    // 演示数据清理
+    async resetDemoData(shopId: string) {
+        return this.delete('/api/admin/demo/cleanup', { shopId } as any); // hack: delete body support
     }
 }
 

@@ -16,7 +16,9 @@
     "test:bot:style": "npm -C tests run test:style",
     "test:bot:pricing": "npm -C tests run test:pricing",
     "test:bot:anomaly": "npm -C tests run test:anomaly",
-    "test:bot:restock": "npm -C tests run test:restock"
+    "test:bot:restock": "npm -C tests run test:restock",
+    "demo": "npm -C tests run demo",
+    "demo:ui": "tsx tests/ui/demo-ui.ts"
   },
   "dependencies": {
     "@google/genai": "^1.38.0",
@@ -29,6 +31,7 @@
   },
   "devDependencies": {
     "@faker-js/faker": "^10.2.0",
+    "@marp-team/marp-cli": "^4.2.3",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@types/cors": "^2.8.17",
@@ -38,6 +41,7 @@
     "concurrently": "^9.1.2",
     "dotenv": "^17.2.3",
     "jsdom": "^27.4.0",
+    "puppeteer": "^24.36.1",
     "tsx": "^4.21.0",
     "typescript": "~5.8.2",
     "vite": "^6.2.0",

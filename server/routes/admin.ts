@@ -272,23 +272,50 @@ router.delete('/tags/:id', async (req, res) => {
 // ============ 推送管理 ============
 
 // POST /api/admin/push/private - 私推
+// POST /api/admin/push/private - 私推
 router.post('/push/private', async (req, res) => {
-    const { shopIds, imageUrl, name, remark, tags, deadline } = req.body;
+    // 支持两种模式：
+    // 1. 批量推送不同款式: { styles: [{ shopId, name, imageUrl, ... }] }
+    // 2. 单款推送多店: { shopIds: [], name, imageUrl, ... }
 
-    const styles = shopIds.map((shopId: string) => ({
-        push_type: 'PRIVATE',
-        shop_id: shopId,
-        image_url: imageUrl,
-        name,
-        remark,
-        tags,
-        deadline,
-        status: 'new'
-    }));
+    let stylesToInsert = [];
+
+    if (req.body.styles && Array.isArray(req.body.styles)) {
+        stylesToInsert = req.body.styles.map((s: any) => ({
+            push_type: 'PRIVATE',
+            shop_id: s.shopId,
+            shop_name: s.shopName,
+            image_url: s.imageUrl,
+            name: s.name,
+            remark: s.remark,
+            tags: s.tags,
+            deadline: s.deadline,
+            status: 'new',
+            timestamp_label: '刚刚',
+            created_at: new Date().toISOString()
+        }));
+    } else {
+        const { shopIds, imageUrl, name, remark, tags, deadline } = req.body;
+        if (!shopIds || !Array.isArray(shopIds)) {
+            return res.status(400).json({ error: 'Invalid payload: shopIds or styles required' });
+        }
+        stylesToInsert = shopIds.map((shopId: string) => ({
+            push_type: 'PRIVATE',
+            shop_id: shopId,
+            image_url: imageUrl,
+            name,
+            remark,
+            tags,
+            deadline,
+            status: 'new',
+            timestamp_label: '刚刚',
+            created_at: new Date().toISOString()
+        }));
+    }
 
     const { data, error } = await supabase
         .from('b_style_demand')
-        .insert(styles)
+        .insert(stylesToInsert)
         .select();
 
     if (error) return res.status(500).json({ error: error.message });
@@ -420,6 +447,32 @@ router.get('/restock', async (req, res) => {
     const { data, error, count } = await query;
     if (error) return res.status(500).json({ error: error.message });
     res.json({ data: data || [], total: count || 0, page, pageSize });
+});
+
+// ============ 演示数据清理 ============
+
+// DELETE /api/admin/demo/cleanup - 清理演示数据
+router.delete('/demo/cleanup', async (req, res) => {
+    const { shopId } = req.body;
+
+    if (!shopId) {
+        return res.status(400).json({ error: 'Shop ID is required' });
+    }
+
+    try {
+        // 1. 清理款式需求
+        const { error: styleError } = await supabase
+            .from('b_style_demand')
+            .delete()
+            .eq('shop_id', shopId);
+
+        if (styleError) throw styleError;
+
+        res.json({ success: true });
+    } catch (err: any) {
+        console.error('Cleanup Error:', err);
+        res.status(500).json({ error: err.message });
+    }
 });
 
 export default router;
