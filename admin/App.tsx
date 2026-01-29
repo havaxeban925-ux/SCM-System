@@ -18,11 +18,12 @@ interface User {
     avatar: string;
 }
 
-const USERS: Record<string, { password: string; avatar: string }> = {
-    '阿桃': { password: 'baozhulingjiang', avatar: '🍑' },
-    '阿允': { password: 'baozhulingjiang', avatar: '✨' },
-    '铃酱': { password: 'baozhulingjiang', avatar: '🔔' },
-    '阿秋': { password: 'baozhulingjiang', avatar: '🍂' },
+// 用户头像配置（密码从环境变量读取）
+const USER_AVATARS: Record<string, string> = {
+    '阿桃': '🍑',
+    '阿允': '✨',
+    '铃酱': '🔔',
+    '阿秋': '🍂',
 };
 
 const App: React.FC = () => {
@@ -35,16 +36,18 @@ const App: React.FC = () => {
     const [requestTab, setRequestTab] = useState<any>('style'); // Using any to avoid import issues for now, or string
 
     const handleLogin = () => {
-        const userData = USERS[loginForm.username];
-        if (!userData) {
+        const avatar = USER_AVATARS[loginForm.username];
+        if (!avatar) {
             setLoginError('用户名不存在');
             return;
         }
-        if (userData.password !== loginForm.password) {
+        // 密码从环境变量读取
+        const adminPassword = import.meta.env.VITE_ADMIN_PASSWORD || '';
+        if (loginForm.password !== adminPassword) {
             setLoginError('密码错误');
             return;
         }
-        setUser({ name: loginForm.username, avatar: userData.avatar });
+        setUser({ name: loginForm.username, avatar });
         setLoginError('');
     };
 
