@@ -1,0 +1,341 @@
+import React, { useState } from 'react';
+
+interface AnomalyOrder {
+    id: string;
+    shop_name: string;
+    sub_type: '新增尺码' | '修改尺码' | '人台误判' | '换图误判' | '申请下架' | '其他';
+    category: '尺码问题' | '图片异常' | '其他';
+    target_codes: string[];
+    submit_time: string;
+    status: '待处理' | '已处理' | '已驳回';
+    content?: string;
+}
+
+const AnomalyOrderPage: React.FC = () => {
+    const [orders, setOrders] = useState<AnomalyOrder[]>([
+        {
+            id: '1',
+            shop_name: '示例官方旗舰店',
+            sub_type: '新增尺码',
+            category: '尺码问题',
+            target_codes: ['SKC-001'],
+            submit_time: '2024-05-20 10:30',
+            status: '待处理',
+            content: '需要新增XL尺码'
+        },
+        {
+            id: '2',
+            shop_name: '名品潮流馆',
+            sub_type: '修改尺码',
+            category: '尺码问题',
+            target_codes: ['SKC-002', 'SKC-003'],
+            submit_time: '2024-05-21 14:00',
+            status: '待处理',
+            content: 'M码尺寸偏小，需要调整'
+        },
+        {
+            id: '3',
+            shop_name: '赫本工作室',
+            sub_type: '人台误判',
+            category: '图片异常',
+            target_codes: ['SPU-001'],
+            submit_time: '2024-05-22 09:15',
+            status: '已处理',
+            content: '图片识别错误，非人模图'
+        },
+        {
+            id: '4',
+            shop_name: '意式精品馆',
+            sub_type: '换图误判',
+            category: '图片异常',
+            target_codes: ['SPU-002'],
+            submit_time: '2024-05-23 11:00',
+            status: '已驳回',
+            content: '换图后被误判为不合规'
+        },
+        {
+            id: '5',
+            shop_name: '新店测试',
+            sub_type: '申请下架',
+            category: '其他',
+            target_codes: ['SKC-010', 'SKC-011'],
+            submit_time: '2024-05-24 16:30',
+            status: '待处理',
+            content: '商品缺货，申请临时下架'
+        },
+    ]);
+
+    const [filter, setFilter] = useState<'all' | '尺码问题' | '图片异常' | '其他'>('all');
+    const [statusFilter, setStatusFilter] = useState<'all' | '待处理' | '已处理' | '已驳回'>('all');
+    const [detailModal, setDetailModal] = useState<{ show: boolean; order: AnomalyOrder | null }>({ show: false, order: null });
+
+    const filteredOrders = orders.filter(o => {
+        const categoryMatch = filter === 'all' || o.category === filter;
+        const statusMatch = statusFilter === 'all' || o.status === statusFilter;
+        return categoryMatch && statusMatch;
+    });
+
+    const handleProcess = (id: string) => {
+        setOrders(orders.map(o => o.id === id ? { ...o, status: '已处理' as const } : o));
+        alert('已处理');
+    };
+
+    const handleReject = (id: string) => {
+        if (!confirm('确定驳回该工单？')) return;
+        setOrders(orders.map(o => o.id === id ? { ...o, status: '已驳回' as const } : o));
+        alert('已驳回');
+    };
+
+    const getCategoryColor = (category: string) => {
+        switch (category) {
+            case '尺码问题': return { bg: '#dbeafe', color: '#1e40af' };
+            case '图片异常': return { bg: '#fef3c7', color: '#92400e' };
+            case '其他': return { bg: '#f3f4f6', color: '#374151' };
+            default: return { bg: '#f3f4f6', color: '#374151' };
+        }
+    };
+
+    const getSubTypeColor = (subType: string) => {
+        switch (subType) {
+            case '新增尺码': return { bg: '#dbeafe', color: '#1e40af' };
+            case '修改尺码': return { bg: '#e0e7ff', color: '#3730a3' };
+            case '人台误判': return { bg: '#fef3c7', color: '#92400e' };
+            case '换图误判': return { bg: '#fed7aa', color: '#9a3412' };
+            case '申请下架': return { bg: '#fee2e2', color: '#991b1b' };
+            default: return { bg: '#f3f4f6', color: '#374151' };
+        }
+    };
+
+    return (
+        <div className="order-page">
+            <div className="page-header">
+                <div>
+                    <h1 className="page-title">异常工单</h1>
+                    <p className="page-subtitle">处理尺码问题、图片异常、申请下架等异常情况</p>
+                </div>
+            </div>
+
+            <div className="card">
+                <div className="filter-bar" style={{ flexWrap: 'wrap', gap: 16 }}>
+                    <div>
+                        <span style={{ fontSize: 12, color: 'var(--text-muted)', marginRight: 8 }}>类型:</span>
+                        <div className="tabs" style={{ display: 'inline-flex' }}>
+                            <button className={`tab ${filter === 'all' ? 'active' : ''}`} onClick={() => setFilter('all')}>全部</button>
+                            <button className={`tab ${filter === '尺码问题' ? 'active' : ''}`} onClick={() => setFilter('尺码问题')}>尺码问题</button>
+                            <button className={`tab ${filter === '图片异常' ? 'active' : ''}`} onClick={() => setFilter('图片异常')}>图片异常</button>
+                            <button className={`tab ${filter === '其他' ? 'active' : ''}`} onClick={() => setFilter('其他')}>其他</button>
+                        </div>
+                    </div>
+                    <div>
+                        <span style={{ fontSize: 12, color: 'var(--text-muted)', marginRight: 8 }}>状态:</span>
+                        <div className="tabs" style={{ display: 'inline-flex' }}>
+                            <button className={`tab ${statusFilter === 'all' ? 'active' : ''}`} onClick={() => setStatusFilter('all')}>全部</button>
+                            <button className={`tab ${statusFilter === '待处理' ? 'active' : ''}`} onClick={() => setStatusFilter('待处理')}>待处理</button>
+                            <button className={`tab ${statusFilter === '已处理' ? 'active' : ''}`} onClick={() => setStatusFilter('已处理')}>已处理</button>
+                            <button className={`tab ${statusFilter === '已驳回' ? 'active' : ''}`} onClick={() => setStatusFilter('已驳回')}>已驳回</button>
+                        </div>
+                    </div>
+                </div>
+
+                <table className="data-table">
+                    <thead>
+                        <tr>
+                            <th>店铺</th>
+                            <th>一级类型</th>
+                            <th>二级类型</th>
+                            <th>关联编码</th>
+                            <th>提交时间</th>
+                            <th>状态</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {filteredOrders.map(order => (
+                            <tr key={order.id}>
+                                <td style={{ fontWeight: 500 }}>{order.shop_name}</td>
+                                <td>
+                                    <span style={{
+                                        padding: '3px 8px',
+                                        borderRadius: 4,
+                                        fontSize: 11,
+                                        ...getCategoryColor(order.category)
+                                    }}>
+                                        {order.category}
+                                    </span>
+                                </td>
+                                <td>
+                                    <span style={{
+                                        padding: '3px 8px',
+                                        borderRadius: 4,
+                                        fontSize: 11,
+                                        ...getSubTypeColor(order.sub_type)
+                                    }}>
+                                        {order.sub_type}
+                                    </span>
+                                </td>
+                                <td>
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                                        {order.target_codes.map((code, idx) => (
+                                            <span key={idx} style={{
+                                                padding: '2px 6px',
+                                                background: 'var(--bg-secondary)',
+                                                borderRadius: 4,
+                                                fontSize: 11,
+                                                fontFamily: 'monospace'
+                                            }}>
+                                                {code}
+                                            </span>
+                                        ))}
+                                    </div>
+                                </td>
+                                <td style={{ fontSize: 12, color: 'var(--text-muted)' }}>{order.submit_time}</td>
+                                <td>
+                                    <span className={`status-badge ${order.status === '已处理' ? 'completed' : order.status === '已驳回' ? 'rejected' : 'processing'}`}>
+                                        {order.status}
+                                    </span>
+                                </td>
+                                <td>
+                                    <div className="action-buttons">
+                                        {order.status === '待处理' && (
+                                            <>
+                                                <button className="btn btn-sm btn-primary" onClick={() => handleProcess(order.id)}>
+                                                    处理
+                                                </button>
+                                                <button className="btn btn-sm btn-danger" onClick={() => handleReject(order.id)}>
+                                                    驳回
+                                                </button>
+                                            </>
+                                        )}
+                                        <button className="btn btn-sm btn-outline" onClick={() => setDetailModal({ show: true, order })}>
+                                            详情
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+
+            {/* 详情弹窗 */}
+            {detailModal.show && detailModal.order && (
+                <div className="modal-overlay" onClick={() => setDetailModal({ show: false, order: null })}>
+                    <div className="modal" onClick={e => e.stopPropagation()}>
+                        <div className="modal-header">
+                            <span className="modal-title">异常工单详情</span>
+                            <button className="btn-icon" onClick={() => setDetailModal({ show: false, order: null })}>
+                                <span className="material-symbols-outlined">close</span>
+                            </button>
+                        </div>
+                        <div className="modal-body">
+                            <div className="detail-grid">
+                                <div className="detail-item">
+                                    <label>店铺名称</label>
+                                    <span>{detailModal.order.shop_name}</span>
+                                </div>
+                                <div className="detail-item">
+                                    <label>一级类型</label>
+                                    <span>{detailModal.order.category}</span>
+                                </div>
+                                <div className="detail-item">
+                                    <label>二级类型</label>
+                                    <span>{detailModal.order.sub_type}</span>
+                                </div>
+                                <div className="detail-item">
+                                    <label>提交时间</label>
+                                    <span>{detailModal.order.submit_time}</span>
+                                </div>
+                            </div>
+
+                            <div className="detail-section">
+                                <h4>关联编码</h4>
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                                    {detailModal.order.target_codes.map((code, idx) => (
+                                        <span key={idx} className="spu-tag">{code}</span>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {detailModal.order.content && (
+                                <div className="detail-section">
+                                    <h4>问题描述</h4>
+                                    <p style={{ margin: 0, fontSize: 14 }}>{detailModal.order.content}</p>
+                                </div>
+                            )}
+
+                            <div className="detail-section">
+                                <h4>处理备注</h4>
+                                <textarea
+                                    className="form-textarea"
+                                    placeholder="输入处理备注..."
+                                    style={{ minHeight: 80 }}
+                                />
+                            </div>
+                        </div>
+                        <div className="modal-footer">
+                            <button className="btn btn-outline" onClick={() => setDetailModal({ show: false, order: null })}>
+                                关闭
+                            </button>
+                            {detailModal.order.status === '待处理' && (
+                                <>
+                                    <button className="btn btn-danger" onClick={() => { handleReject(detailModal.order!.id); setDetailModal({ show: false, order: null }); }}>
+                                        驳回
+                                    </button>
+                                    <button className="btn btn-primary" onClick={() => { handleProcess(detailModal.order!.id); setDetailModal({ show: false, order: null }); }}>
+                                        确认处理
+                                    </button>
+                                </>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            <style>{`
+                .order-page {
+                    padding: 24px;
+                }
+                .detail-grid {
+                    display: grid;
+                    grid-template-columns: 1fr 1fr;
+                    gap: 16px;
+                    margin-bottom: 16px;
+                }
+                .detail-item {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 4px;
+                }
+                .detail-item label {
+                    font-size: 12px;
+                    color: var(--text-muted);
+                }
+                .detail-item span {
+                    font-size: 14px;
+                    color: var(--text-primary);
+                }
+                .detail-section {
+                    margin-bottom: 16px;
+                    padding: 12px;
+                    background: var(--bg-secondary);
+                    border-radius: 8px;
+                }
+                .detail-section h4 {
+                    font-size: 13px;
+                    color: var(--text-secondary);
+                    margin-bottom: 8px;
+                }
+                .spu-tag {
+                    padding: 4px 8px;
+                    background: var(--card-bg);
+                    border: 1px solid var(--border-color);
+                    border-radius: 4px;
+                    font-family: monospace;
+                    font-size: 12px;
+                }
+            `}</style>
+        </div>
+    );
+};
+
+export default AnomalyOrderPage;

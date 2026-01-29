@@ -15,18 +15,44 @@ const MOCK_MESSAGES = [
   { id: '3', title: '核价申请已通过', content: '您的报价单申请已通过审核', time: '2小时前', read: true, targetView: AppView.REQUEST_WORKBENCH },
 ];
 
-// 登录视图组件
+// 登录视图组件（支持登录和注册）
 const LoginView: React.FC<{ onLogin: () => void }> = ({ onLogin }) => {
+  const [mode, setMode] = useState<'login' | 'register'>('login');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [shopName, setShopName] = useState('');
+  const [registerStatus, setRegisterStatus] = useState<'idle' | 'pending' | 'rejected'>('idle');
+  const [rejectReason, setRejectReason] = useState('');
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
     if (username && password) {
+      // 模拟检查注册状态
+      if (registerStatus === 'pending') {
+        alert('您的账号正在审核中，请耐心等待...');
+        return;
+      }
+      if (registerStatus === 'rejected') {
+        alert(`注册被驳回：${rejectReason}`);
+        setMode('register');
+        return;
+      }
       onLogin();
     } else {
       alert('请输入用户名和密码');
     }
+  };
+
+  const handleRegister = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!username || !password || !shopName) {
+      alert('请填写完整信息');
+      return;
+    }
+    // 模拟提交注册申请到"新增商家"审批工单
+    setRegisterStatus('pending');
+    alert('注册申请已提交，请等待买手审核。\n\n审核通过后您将收到通知。');
+    setMode('login');
   };
 
   return (
@@ -40,34 +66,117 @@ const LoginView: React.FC<{ onLogin: () => void }> = ({ onLogin }) => {
             <h1 className="text-2xl font-black text-navy-700">小铃子组业务协同系统</h1>
             <p className="text-sm text-slate-500 mt-2">SCM - Supply Chain Management</p>
           </div>
-          <form onSubmit={handleSubmit} className="space-y-5">
-            <div>
-              <label className="block text-xs font-bold text-slate-500 mb-2">用户名</label>
-              <input
-                type="text"
-                className="w-full h-12 px-4 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
-                placeholder="请输入用户名"
-                value={username}
-                onChange={e => setUsername(e.target.value)}
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-slate-500 mb-2">密码</label>
-              <input
-                type="password"
-                className="w-full h-12 px-4 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
-                placeholder="请输入密码"
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-              />
-            </div>
+
+          {/* 选项卡切换 */}
+          <div className="flex border-b border-slate-200 mb-6">
             <button
-              type="submit"
-              className="w-full h-12 bg-primary text-white rounded-lg text-sm font-bold hover:bg-blue-600 transition-colors shadow-lg shadow-primary/30"
+              type="button"
+              onClick={() => setMode('login')}
+              className={`flex-1 pb-3 text-sm font-bold transition-colors ${mode === 'login'
+                  ? 'text-primary border-b-2 border-primary'
+                  : 'text-slate-400 hover:text-slate-600'
+                }`}
             >
-              登 录
+              登录
             </button>
-          </form>
+            <button
+              type="button"
+              onClick={() => setMode('register')}
+              className={`flex-1 pb-3 text-sm font-bold transition-colors ${mode === 'register'
+                  ? 'text-primary border-b-2 border-primary'
+                  : 'text-slate-400 hover:text-slate-600'
+                }`}
+            >
+              注册
+            </button>
+          </div>
+
+          {/* 待审核提示 */}
+          {registerStatus === 'pending' && (
+            <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800 flex items-center gap-2">
+              <span className="material-symbols-outlined text-amber-500">schedule</span>
+              您的注册申请正在审核中...
+            </div>
+          )}
+
+          {/* 驳回提示 */}
+          {registerStatus === 'rejected' && (
+            <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700 flex items-center gap-2">
+              <span className="material-symbols-outlined text-red-500">error</span>
+              店铺不存在：{rejectReason}
+            </div>
+          )}
+
+          {mode === 'login' ? (
+            <form onSubmit={handleLogin} className="space-y-5">
+              <div>
+                <label className="block text-xs font-bold text-slate-500 mb-2">账号</label>
+                <input
+                  type="text"
+                  className="w-full h-12 px-4 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
+                  placeholder="请输入账号"
+                  value={username}
+                  onChange={e => setUsername(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-500 mb-2">密码</label>
+                <input
+                  type="password"
+                  className="w-full h-12 px-4 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
+                  placeholder="请输入密码"
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                />
+              </div>
+              <button
+                type="submit"
+                className="w-full h-12 bg-primary text-white rounded-lg text-sm font-bold hover:bg-blue-600 transition-colors shadow-lg shadow-primary/30"
+              >
+                登 录
+              </button>
+            </form>
+          ) : (
+            <form onSubmit={handleRegister} className="space-y-5">
+              <div>
+                <label className="block text-xs font-bold text-slate-500 mb-2">账号</label>
+                <input
+                  type="text"
+                  className="w-full h-12 px-4 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
+                  placeholder="请设置登录账号"
+                  value={username}
+                  onChange={e => setUsername(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-500 mb-2">密码</label>
+                <input
+                  type="password"
+                  className="w-full h-12 px-4 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
+                  placeholder="请设置登录密码"
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-500 mb-2">店铺名称</label>
+                <input
+                  type="text"
+                  className="w-full h-12 px-4 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
+                  placeholder="请输入店铺名称（用于审核）"
+                  value={shopName}
+                  onChange={e => setShopName(e.target.value)}
+                />
+              </div>
+              <button
+                type="submit"
+                className="w-full h-12 bg-green-600 text-white rounded-lg text-sm font-bold hover:bg-green-700 transition-colors shadow-lg shadow-green-600/30"
+              >
+                申请注册
+              </button>
+            </form>
+          )}
+
           <p className="text-center text-xs text-slate-400 mt-6">© 2024 SCM System. All Rights Reserved.</p>
         </div>
       </div>
@@ -284,21 +393,25 @@ const App: React.FC = () => {
         <Header />
       </div>
       <main className="flex-1 max-w-[1440px] w-full mx-auto px-6 lg:px-12 py-8">
-        {currentView === AppView.STYLE_WORKBENCH && (
+        <div style={{ display: currentView === AppView.STYLE_WORKBENCH ? 'block' : 'none' }}>
           <StyleWorkbench
             availableStyles={availableStyles}
             onConfirmStyle={handleConfirmStyle}
           />
-        )}
-        {currentView === AppView.DEVELOPMENT_PROGRESS && (
+        </div>
+        <div style={{ display: currentView === AppView.DEVELOPMENT_PROGRESS ? 'block' : 'none' }}>
           <DevelopmentProgress
             styles={stylesInDevelopment}
             onAbandon={handleAbandonDevelopment}
             onUpdateStatus={handleUpdateDevStatus}
           />
-        )}
-        {currentView === AppView.REQUEST_WORKBENCH && <RequestWorkbench onNewRequest={() => setShowQuotationDrawer(true)} />}
-        {currentView === AppView.REPLENISHMENT && <ReplenishmentSynergy />}
+        </div>
+        <div style={{ display: currentView === AppView.REQUEST_WORKBENCH ? 'block' : 'none' }}>
+          <RequestWorkbench onNewRequest={() => setShowQuotationDrawer(true)} />
+        </div>
+        <div style={{ display: currentView === AppView.REPLENISHMENT ? 'block' : 'none' }}>
+          <ReplenishmentSynergy />
+        </div>
       </main>
       <footer className="mt-auto border-t border-slate-200 bg-white px-6 lg:px-12 py-6">
         <div className="max-w-[1440px] mx-auto flex flex-col md:flex-row justify-between items-center gap-4">

@@ -1,0 +1,425 @@
+import { Router } from 'express';
+import { supabase } from '../lib/supabase';
+
+const router = Router();
+
+// ============ 看板数据 ============
+
+// GET /api/admin/dashboard - 获取看板数据
+router.get('/dashboard', async (req, res) => {
+    try {
+        // 1. Shop Total (使用 count 避免 1000 条限制)
+        const { count: shopTotal, error: shopCountError } = await supabase
+            .from('sys_shop')
+            .select('*', { count: 'exact', head: true });
+        if (shopCountError) throw shopCountError;
+
+        // 2. Shop Levels Distribution (需要全量获取，用 range 绕过限制)
+        let allShops: any[] = [];
+        let page = 0;
+        const pageSize = 1000;
+        while (true) {
+            const { data, error } = await supabase
+                .from('sys_shop')
+                .select('level')
+                .range(page * pageSize, (page + 1) * pageSize - 1);
+            if (error) throw error;
+            if (!data || data.length === 0) break;
+            allShops = allShops.concat(data);
+            if (data.length < pageSize) break;
+            page++;
+        }
+        const shopLevels = allShops.reduce((acc: any, curr) => {
+            const lvl = curr.level || 'N';
+            acc[lvl] = (acc[lvl] || 0) + 1;
+            return acc;
+        }, { S: 0, A: 0, B: 0, C: 0, N: 0 });
+
+        // 3. KEY Total (有 key_id 的店铺数)
+        const { count: keyTotal, error: keyError } = await supabase
+            .from('sys_shop')
+            .select('*', { count: 'exact', head: true })
+            .not('key_id', 'is', null)
+            .neq('key_id', '');
+        if (keyError) throw keyError;
+
+        // 4. 各类工单统计
+        // 款式工单 (b_style_demand)
+        const { count: styleTotal, error: styleError } = await supabase
+            .from('b_style_demand')
+            .select('*', { count: 'exact', head: true });
+        if (styleError) throw styleError;
+
+        const { count: stylePending, error: stylePendingError } = await supabase
+            .from('b_style_demand')
+            .select('*', { count: 'exact', head: true })
+            .in('status', ['new', 'developing', 'helping']);
+        if (stylePendingError) throw stylePendingError;
+
+        // 核价工单
+        const { count: pricingTotal, error: pricingTotalError } = await supabase
+            .from('b_request_record')
+            .select('*', { count: 'exact', head: true })
+            .eq('type', 'pricing');
+        if (pricingTotalError) throw pricingTotalError;
+
+        const { count: pricingPending, error: pricingPendingError } = await supabase
+            .from('b_request_record')
+            .select('*', { count: 'exact', head: true })
+            .eq('type', 'pricing')
+            .eq('status', 'processing');
+        if (pricingPendingError) throw pricingPendingError;
+
+        // 异常工单
+        const { count: anomalyTotal, error: anomalyTotalError } = await supabase
+            .from('b_request_record')
+            .select('*', { count: 'exact', head: true })
+            .eq('type', 'anomaly');
+        if (anomalyTotalError) throw anomalyTotalError;
+
+        const { count: anomalyPending, error: anomalyPendingError } = await supabase
+            .from('b_request_record')
+            .select('*', { count: 'exact', head: true })
+            .eq('type', 'anomaly')
+            .eq('status', 'processing');
+        if (anomalyPendingError) throw anomalyPendingError;
+
+        // 大货工单 (b_restock_order)
+        const { count: restockTotal, error: restockTotalError } = await supabase
+            .from('b_restock_order')
+            .select('*', { count: 'exact', head: true });
+        if (restockTotalError) throw restockTotalError;
+
+        const { count: restockPending, error: restockPendingError } = await supabase
+            .from('b_restock_order')
+            .select('*', { count: 'exact', head: true })
+            .in('status', ['pending', 'processing']);
+        if (restockPendingError) throw restockPendingError;
+
+        // 5. 用户总数 (暂时返回固定4人，因为是硬编码的)
+        const userTotal = 4;
+
+        res.json({
+            stats: {
+                key_total: keyTotal || 0,
+                shop_total: shopTotal || 0,
+                user_total: userTotal,
+                shop_levels: shopLevels,
+                // 工单统计
+                style_total: styleTotal || 0,
+                style_pending: stylePending || 0,
+                pricing_total: pricingTotal || 0,
+                pricing_pending: pricingPending || 0,
+                anomaly_total: anomalyTotal || 0,
+                anomaly_pending: anomalyPending || 0,
+                restock_total: restockTotal || 0,
+                restock_pending: restockPending || 0
+            },
+            shop_levels: shopLevels
+        });
+
+    } catch (err: any) {
+        console.error('Dashboard Error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ============ 商铺管理 ============
+
+// GET /api/admin/shops - 获取商铺列表
+router.get('/shops', async (req, res) => {
+    const page = parseInt(req.query.page as string) || 1;
+    const pageSize = parseInt(req.query.pageSize as string) || 50;
+    const search = req.query.search as string;
+    const offset = (page - 1) * pageSize;
+
+    let query = supabase
+        .from('sys_shop')
+        .select('*', { count: 'exact' })
+        .order('created_at', { ascending: false })
+        .range(offset, offset + pageSize - 1);
+
+    if (search) {
+        query = query.or(`shop_name.ilike.%${search}%,key_id.ilike.%${search}%`);
+    }
+
+    const { data, error, count } = await query;
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ data: data || [], total: count || 0, page, pageSize });
+});
+
+// POST /api/admin/shops - 创建商铺
+router.post('/shops', async (req, res) => {
+    const { shopName, keyId, level, phone, shopId } = req.body;
+
+    const { data, error } = await supabase
+        .from('sys_shop')
+        .insert({
+            shop_name: shopName,
+            key_id: keyId,
+            level: level || 'N',
+            phone: phone,
+            // 如果提供了 shopId (前端传来的店铺ID)，可以用作 UUID 的一部分或存入备注，这里简化直接用 UUID
+        })
+        .select()
+        .single();
+
+    if (error) return res.status(500).json({ error: error.message });
+    res.json(data);
+});
+
+// PATCH /api/admin/shops/:id - 更新商铺
+router.patch('/shops/:id', async (req, res) => {
+    const { id } = req.params;
+    const { shopName, keyId, level, phone } = req.body;
+
+    const updates: any = { updated_at: new Date().toISOString() };
+    if (shopName !== undefined) updates.shop_name = shopName;
+    if (keyId !== undefined) updates.key_id = keyId;
+    if (level !== undefined) updates.level = level;
+    if (phone !== undefined) updates.phone = phone;
+
+    const { error } = await supabase
+        .from('sys_shop')
+        .update(updates)
+        .eq('id', id);
+
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ success: true });
+});
+
+// DELETE /api/admin/shops/:id - 删除商铺
+router.delete('/shops/:id', async (req, res) => {
+    const { id } = req.params;
+
+    const { error } = await supabase
+        .from('sys_shop')
+        .delete()
+        .eq('id', id);
+
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ success: true });
+});
+
+// ============ 标签管理 ============
+
+// GET /api/admin/tags - 获取标签列表
+router.get('/tags', async (req, res) => {
+    const category = req.query.category as string;
+
+    let query = supabase
+        .from('b_tag')
+        .select('*')
+        .order('sort_order', { ascending: true });
+
+    if (category) query = query.eq('category', category);
+
+    const { data, error } = await query;
+    if (error) return res.status(500).json({ error: error.message });
+    res.json(data || []);
+});
+
+// POST /api/admin/tags - 创建标签
+router.post('/tags', async (req, res) => {
+    const { name, category, sortOrder } = req.body;
+
+    const { data, error } = await supabase
+        .from('b_tag')
+        .insert({
+            name,
+            category, // 'visual' | 'style'
+            sort_order: sortOrder || 0
+        })
+        .select()
+        .single();
+
+    if (error) return res.status(500).json({ error: error.message });
+    res.json(data);
+});
+
+// PATCH /api/admin/tags/:id - 更新标签
+router.patch('/tags/:id', async (req, res) => {
+    const { id } = req.params;
+    const { name, category, sortOrder } = req.body;
+
+    const updates: any = {};
+    if (name !== undefined) updates.name = name;
+    if (category !== undefined) updates.category = category;
+    if (sortOrder !== undefined) updates.sort_order = sortOrder;
+
+    const { error } = await supabase
+        .from('b_tag')
+        .update(updates)
+        .eq('id', id);
+
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ success: true });
+});
+
+// DELETE /api/admin/tags/:id - 删除标签
+router.delete('/tags/:id', async (req, res) => {
+    const { id } = req.params;
+
+    const { error } = await supabase
+        .from('b_tag')
+        .delete()
+        .eq('id', id);
+
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ success: true });
+});
+
+// ============ 推送管理 ============
+
+// POST /api/admin/push/private - 私推
+router.post('/push/private', async (req, res) => {
+    const { shopIds, imageUrl, name, remark, tags, deadline } = req.body;
+
+    const styles = shopIds.map((shopId: string) => ({
+        push_type: 'PRIVATE',
+        shop_id: shopId,
+        image_url: imageUrl,
+        name,
+        remark,
+        tags,
+        deadline,
+        status: 'new'
+    }));
+
+    const { data, error } = await supabase
+        .from('b_style_demand')
+        .insert(styles)
+        .select();
+
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ success: true, count: data?.length || 0 });
+});
+
+// POST /api/admin/push/public - 公推
+router.post('/push/public', async (req, res) => {
+    const { imageUrl, name, remark, tags, maxIntents } = req.body;
+
+    const { data, error } = await supabase
+        .from('b_public_style')
+        .insert({
+            image_url: imageUrl,
+            name,
+            remark,
+            tags,
+            max_intents: maxIntents || 5,
+            intent_count: 0
+        })
+        .select()
+        .single();
+
+    if (error) return res.status(500).json({ error: error.message });
+    res.json(data);
+});
+
+// GET /api/admin/push/history - 推送历史
+router.get('/push/history', async (req, res) => {
+    const page = parseInt(req.query.page as string) || 1;
+    const pageSize = parseInt(req.query.pageSize as string) || 50;
+    const pushType = req.query.type as string;
+    const offset = (page - 1) * pageSize;
+
+    let query = supabase
+        .from('b_style_demand')
+        .select('*', { count: 'exact' })
+        .order('created_at', { ascending: false })
+        .range(offset, offset + pageSize - 1);
+
+    if (pushType) query = query.eq('push_type', pushType);
+
+    const { data, error, count } = await query;
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ data: data || [], total: count || 0, page, pageSize });
+});
+
+// ============ SPU 库管理 ============
+
+// GET /api/admin/spu - 获取SPU列表
+router.get('/spu', async (req, res) => {
+    const page = parseInt(req.query.page as string) || 1;
+    const pageSize = parseInt(req.query.pageSize as string) || 500;
+    const search = req.query.search as string;
+    const offset = (page - 1) * pageSize;
+
+    // 从已完成开发的款式中获取SPU
+    let query = supabase
+        .from('b_style_demand')
+        .select('id, name, image_url, back_spu, shop_name, created_at', { count: 'exact' })
+        .eq('status', 'completed')
+        .not('back_spu', 'is', null)
+        .order('created_at', { ascending: false })
+        .range(offset, offset + pageSize - 1);
+
+    if (search) {
+        query = query.or(`name.ilike.%${search}%,back_spu.ilike.%${search}%`);
+    }
+
+    const { data, error, count } = await query;
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ data: data || [], total: count || 0, page, pageSize });
+});
+
+// DELETE /api/admin/spu/:id - 删除SPU记录（清除back_spu字段）
+router.delete('/spu/:id', async (req, res) => {
+    const { id } = req.params;
+
+    const { error } = await supabase
+        .from('b_style_demand')
+        .update({ back_spu: null })
+        .eq('id', id);
+
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ success: true });
+});
+
+// ============ 款式管理（管理后台视角） ============
+
+// GET /api/admin/styles - 获取所有款式（支持多状态筛选）
+router.get('/styles', async (req, res) => {
+    const page = parseInt(req.query.page as string) || 1;
+    const pageSize = parseInt(req.query.pageSize as string) || 50;
+    const status = req.query.status as string;
+    const shopId = req.query.shopId as string;
+    const offset = (page - 1) * pageSize;
+
+    let query = supabase
+        .from('b_style_demand')
+        .select('*', { count: 'exact' })
+        .order('created_at', { ascending: false })
+        .range(offset, offset + pageSize - 1);
+
+    if (status) query = query.eq('status', status);
+    if (shopId) query = query.eq('shop_id', shopId);
+
+    const { data, error, count } = await query;
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ data: data || [], total: count || 0, page, pageSize });
+});
+
+// ============ 补货订单（管理后台视角） ============
+
+// GET /api/admin/restock - 获取补货订单（管理后台）
+router.get('/restock', async (req, res) => {
+    const page = parseInt(req.query.page as string) || 1;
+    const pageSize = parseInt(req.query.pageSize as string) || 50;
+    const status = req.query.status as string;
+    const offset = (page - 1) * pageSize;
+
+    let query = supabase
+        .from('b_restock_order')
+        .select('*', { count: 'exact' })
+        .order('created_at', { ascending: false })
+        .range(offset, offset + pageSize - 1);
+
+    if (status) query = query.eq('status', status);
+
+    const { data, error, count } = await query;
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ data: data || [], total: count || 0, page, pageSize });
+});
+
+export default router;

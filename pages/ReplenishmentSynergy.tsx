@@ -89,12 +89,7 @@ const ReplenishmentSynergy: React.FC = () => {
     const success = await confirmArrival(item._dbId);
     if (success) {
       setItems(items.map(i => i.id === item.id ? { ...i, status: '已确认入仓' as ReplenishmentItem['status'] } : i));
-      alert('已确认入仓，记录将在 48h 内清除。');
-
-      // 模拟5秒后移除
-      setTimeout(() => {
-        setItems(prev => prev.filter(i => i.id !== item.id));
-      }, 5000);
+      alert('已确认入仓！');
     }
   };
 
@@ -234,7 +229,7 @@ const ReplenishmentSynergy: React.FC = () => {
                       {item.status === '待买手确认入仓' && (
                         <button onClick={() => handleBuyerConfirm(item)} className="bg-emerald-50 text-emerald-700 border border-emerald-200 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-emerald-100 transition-colors">[模拟] 买手确认入仓</button>
                       )}
-                      {item.status === '已确认入仓' && <span className="text-[10px] text-emerald-600 font-bold italic">入仓成功，48h内自动删除</span>}
+                      {item.status === '已确认入仓' && <span className="text-[10px] text-emerald-600 font-bold italic">✅ 入仓成功</span>}
                       {item.status === '待买手复核' && <span className="text-[10px] text-amber-500 font-bold italic">买手审阅中...</span>}
                     </div>
                   </td>

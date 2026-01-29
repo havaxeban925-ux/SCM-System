@@ -1,0 +1,44 @@
+// 必须在任何其他导入之前加载环境变量
+import { config } from 'dotenv';
+config({ path: '.env.local' });
+
+// 现在可以安全导入其他模块
+import express from 'express';
+import cors from 'cors';
+import stylesRouter from './routes/styles';
+import developmentRouter from './routes/development';
+import requestsRouter from './routes/requests';
+import restockRouter from './routes/restock';
+import adminRouter from './routes/admin';
+
+const app = express();
+const PORT = process.env.PORT || 3001;
+
+// 中间件
+app.use(cors());
+app.use(express.json());
+
+// 路由
+app.use('/api/styles', stylesRouter);
+app.use('/api/development', developmentRouter);
+app.use('/api/requests', requestsRouter);
+app.use('/api/restock', restockRouter);
+app.use('/api/admin', adminRouter);
+
+// 根路由
+app.get('/', (_, res) => {
+    res.json({
+        name: 'SCM System API',
+        version: '1.0.0',
+        endpoints: ['/api/styles', '/api/development', '/api/requests', '/api/restock', '/api/admin', '/api/health']
+    });
+});
+
+// 健康检查
+app.get('/api/health', (_, res) => {
+    res.json({ status: 'ok', time: new Date().toISOString() });
+});
+
+app.listen(PORT, () => {
+    console.log(`Server running on http://localhost:${PORT}`);
+});
