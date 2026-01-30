@@ -1,10 +1,12 @@
 import { api } from '../lib/api';
 import { StyleDemand } from '../lib/supabase';
+import { PaginatedResponse } from '../types';
 
 // 获取开发中的款式
 export async function getDevelopingStyles(): Promise<StyleDemand[]> {
     try {
-        return await api.get<StyleDemand[]>('/api/development');
+        const res = await api.get<PaginatedResponse<StyleDemand>>('/api/development');
+        return res.data || [];
     } catch (error) {
         console.error('Error fetching developing styles:', error);
         return [];

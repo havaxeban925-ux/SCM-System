@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import ImageUpload from '../components/ImageUpload';
 
 interface Shop {
     id: string;
@@ -45,51 +46,54 @@ const PushManage: React.FC = () => {
     const styles = ['优雅风', '休闲风', '通勤风', '法式风', '韩系风', '甜酷风', '极简风'];
 
     useEffect(() => {
-        // Mock Shops
-        setShops([
-            { id: '1', shop_name: '示例官方旗舰店', key_id: 'KEY-001', private_push_count: 1 },
-            { id: '2', shop_name: '示例品牌专营店', key_id: 'KEY-001', private_push_count: 3 },
-            { id: '3', shop_name: '名品潮流馆', key_id: 'KEY-002', private_push_count: 0 },
-            { id: '4', shop_name: '新店测试', key_id: 'KEY-003', private_push_count: 2 },
-            { id: '5', shop_name: '赫本工作室', key_id: 'KEY-004', private_push_count: 0 },
-            { id: '6', shop_name: '意式精品馆', key_id: 'KEY-005', private_push_count: 1 },
-        ]);
+        // Fetch Real Shops
+        const fetchShops = async () => {
+            try {
+                const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+                // Fetch up to 1000 shops for the selector
+                const res = await fetch(`${API_BASE}/api/admin/shops?pageSize=1000`);
+                if (!res.ok) throw new Error('Failed to fetch shops');
+                const json = await res.json();
 
-        // Mock Public Styles
-        setPublicStyles([
-            {
-                id: '201',
-                image: 'https://images.unsplash.com/photo-1572804013307-a9a11198427e?auto=format&fit=crop&q=80&w=200',
-                type: 'public',
-                upload_time: '2024-01-15 10:00',
-                tags: ['人模', '优雅风'],
-                is_top: true,
-                shops: [
-                    { shop_name: '示例官方旗舰店', status: 'interested' },
-                    { shop_name: '名品潮流馆', status: 'pending' }
-                ]
-            },
-            {
-                id: '202',
-                image: 'https://images.unsplash.com/photo-1596755094514-f87e34085b2c?auto=format&fit=crop&q=80&w=200',
-                type: 'public',
-                upload_time: '2024-01-14 15:30',
-                tags: ['平铺', '休闲风'],
-                is_top: false,
-                shops: [
-                    { shop_name: '新店测试', status: 'interested' }
-                ]
-            },
-            {
-                id: '203',
-                image: 'https://images.unsplash.com/photo-1581044777550-4cfa60707c03?auto=format&fit=crop&q=80&w=200',
-                type: 'public',
-                upload_time: '2024-01-13 09:00',
-                tags: ['挂拍', '法式风'],
-                is_top: false,
-                shops: []
+                // Transform to match PushManage Shop interface
+                const realShops: Shop[] = (json.data || []).map((s: any) => ({
+                    id: s.id,
+                    shop_name: s.shop_name,
+                    key_id: s.key_id,
+                    private_push_count: 0 // Mock for now, as backend doesn't track this yet
+                }));
+                setShops(realShops);
+            } catch (err) {
+                console.error('Error fetching shops:', err);
             }
-        ]);
+        };
+
+        // Fetch Real Public Styles
+        const fetchPublicStyles = async () => {
+            try {
+                const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+                const res = await fetch(`${API_BASE}/api/styles/public?pageSize=100`);
+                if (!res.ok) throw new Error('Failed to fetch public styles');
+                const json = await res.json();
+
+                // Transform to PushRecord format
+                const styles: PushRecord[] = (json.data || []).map((s: any) => ({
+                    id: s.id,
+                    image: s.image_url || '',
+                    type: 'public' as const,
+                    upload_time: new Date(s.created_at).toLocaleString(),
+                    tags: s.tags || [],
+                    is_top: false,
+                    shops: [] // Intent info not stored in current schema
+                }));
+                setPublicStyles(styles);
+            } catch (err) {
+                console.error('Error fetching public styles:', err);
+            }
+        };
+
+        fetchShops();
+        fetchPublicStyles();
     }, []);
 
     const filteredShops = shops.filter(s =>
@@ -97,36 +101,96 @@ const PushManage: React.FC = () => {
         s.key_id?.toLowerCase().includes(searchTerm.toLowerCase())
     );
 
-    const handlePrivatePush = () => {
+    const handlePrivatePush = async () => {
         if (!privateImage) return alert('请上传图片');
         if (!privateVisual) return alert('请选择视觉');
         if (!privateStyle) return alert('请选择风格');
-        if (selectedShops.length === 0) return alert('请选择推送店铺');
+        // selectedShops now holds selected KEYs (strings)
+        if (selectedShops.length === 0) return alert('请选择推送 KEY');
 
-        alert(`私推成功！\n店铺: ${selectedShops.length}家`);
+        try {
+            // Find all shop IDs belonging to the selected KEYS
+            // selectedShops here is actually an array of KEY_IDs
+            const targetShopIds = shops
+                .filter(s => s.key_id && selectedShops.includes(s.key_id))
+                .map(s => s.id);
 
-        // Clear form
-        setPrivateImage('');
-        setPrivateLink('');
-        setPrivateRemark('');
-        setPrivateVisual('');
-        setPrivateStyle('');
-        setSelectedShops([]);
+            if (targetShopIds.length === 0) {
+                return alert('所选 KEY 下暂无任何店铺，无法推送');
+            }
+
+            const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+            const res = await fetch(`${API_BASE}/api/admin/push/private`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    shopIds: targetShopIds,
+                    imageUrl: privateImage,
+                    name: `私推款式-${new Date().toLocaleTimeString()}`, // 临时自动命名
+                    remark: privateRemark,
+                    tags: [privateVisual, privateStyle],
+                    deadline: 3 // 默认3天
+                })
+            });
+
+            if (!res.ok) {
+                const err = await res.json();
+                alert(`私推失败: ${err.error}`);
+                return;
+            }
+
+            alert(`私推成功！\n已推送给 ${selectedShops.length} 个KEY (共 ${targetShopIds.length} 家店铺)`);
+
+            // Clear form
+            setPrivateImage('');
+            setPrivateLink('');
+            setPrivateRemark('');
+            setPrivateVisual('');
+            setPrivateStyle('');
+            setSelectedShops([]);
+        } catch (err: any) {
+            alert('请求失败，请检查网络或后端');
+            console.error(err);
+        }
     };
 
-    const handlePublicPush = () => {
+    const handlePublicPush = async () => {
         if (!publicImage) return alert('请上传图片');
         if (!publicVisual) return alert('请选择视觉');
         if (!publicStyle) return alert('请选择风格');
 
-        alert('已发布至公池！');
+        try {
+            const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+            const res = await fetch(`${API_BASE}/api/admin/push/public`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    imageUrl: publicImage,
+                    name: `公推款式-${new Date().toLocaleTimeString()}`,
+                    remark: publicRemark,
+                    tags: [publicVisual, publicStyle],
+                    maxIntents: 2
+                })
+            });
 
-        // Clear form
-        setPublicImage('');
-        setPublicLink('');
-        setPublicRemark('');
-        setPublicVisual('');
-        setPublicStyle('');
+            if (!res.ok) {
+                const err = await res.json();
+                alert(`发布失败: ${err.error}`);
+                return;
+            }
+
+            alert('已成功发布至公池！');
+
+            // Clear form
+            setPublicImage('');
+            setPublicLink('');
+            setPublicRemark('');
+            setPublicVisual('');
+            setPublicStyle('');
+        } catch (err: any) {
+            alert('请求失败，请检查网络或后端');
+            console.error(err);
+        }
     };
 
     const toggleShop = (id: string) => {
@@ -165,15 +229,12 @@ const PushManage: React.FC = () => {
                     </div>
                     <div className="push-form">
                         <div className="form-group">
-                            <label className="form-label">款式图片 <span style={{ color: 'red' }}>*</span></label>
-                            <input
-                                type="text"
-                                className="form-input"
-                                placeholder="输入图片URL"
+                            <ImageUpload
+                                label="款式图片"
                                 value={privateImage}
-                                onChange={e => setPrivateImage(e.target.value)}
+                                onChange={setPrivateImage}
+                                placeholder="点击或拖拽上传私推图片"
                             />
-                            {privateImage && <img src={privateImage} alt="Preview" className="image-preview" />}
                         </div>
 
                         <div className="form-group">
@@ -206,44 +267,64 @@ const PushManage: React.FC = () => {
                         )}
 
                         <div className="form-group">
-                            <label className="form-label">选择推送店铺 <span style={{ color: 'red' }}>*</span></label>
+                            <label className="form-label">选择推送 KEY <span style={{ color: 'red' }}>*</span></label>
                             <div className="search-box" onClick={() => setShowShopOptions(true)}>
                                 <span className="material-symbols-outlined">search</span>
                                 <input
                                     type="text"
                                     className="form-input"
-                                    placeholder="搜索店铺..."
+                                    placeholder="搜索 KEY..."
                                     value={searchTerm}
                                     onChange={e => setSearchTerm(e.target.value)}
                                     onFocus={() => setShowShopOptions(true)}
                                 />
-                                <span className="selected-count">已选: {selectedShops.length}</span>
+                                <span className="selected-count">已选: {selectedShops.length} 个KEY</span>
                             </div>
 
                             {showShopOptions && (
                                 <div className="shop-select-list">
-                                    {filteredShops.map(shop => {
-                                        const isFull = shop.private_push_count >= 3;
-                                        return (
-                                            <label
-                                                key={shop.id}
-                                                className={`shop-select-item ${selectedShops.includes(shop.id) ? 'selected' : ''}`}
-                                                style={{ opacity: isFull ? 0.5 : 1, cursor: isFull ? 'not-allowed' : 'pointer' }}
-                                            >
-                                                <input
-                                                    type="checkbox"
-                                                    checked={selectedShops.includes(shop.id)}
-                                                    onChange={() => toggleShop(shop.id)}
-                                                    disabled={isFull}
-                                                />
-                                                <span style={{ flex: 1 }}>{shop.shop_name}</span>
-                                                <span className="status-badge drafting" style={{ fontSize: 10 }}>{shop.key_id}</span>
-                                                <span style={{ fontSize: 11, marginLeft: 8, color: isFull ? 'red' : '#999' }}>
-                                                    {shop.private_push_count}/3
-                                                </span>
-                                            </label>
-                                        );
-                                    })}
+                                    {/* 按 KEY 分组并去重后的列表 - 处理空 key_id */}
+                                    {Object.values(shops.reduce((acc, shop) => {
+                                        // 如果 key_id 为空，使用 shop_name 作为临时键
+                                        const k = (shop.key_id && shop.key_id.trim()) ? shop.key_id.trim() : shop.shop_name || '未知';
+                                        if (!acc[k]) {
+                                            acc[k] = { ...shop, key_id: k }; // Take first shop as rep
+                                        }
+                                        return acc;
+                                    }, {} as Record<string, Shop>))
+                                        .filter(s => {
+                                            const lower = searchTerm.toLowerCase();
+                                            // 搜索匹配 KEY 或 店铺名
+                                            return s.key_id!.toLowerCase().includes(lower) ||
+                                                shops.some(inner => inner.key_id === s.key_id && inner.shop_name.toLowerCase().includes(lower));
+                                        })
+                                        .map(shop => {
+                                            const keyId = shop.key_id!;
+                                            const isSelected = selectedShops.includes(keyId);
+                                            return (
+                                                <label
+                                                    key={keyId}
+                                                    className={`shop-select-item ${isSelected ? 'selected' : ''}`}
+                                                    style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px' }}
+                                                >
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={isSelected}
+                                                        onChange={() => {
+                                                            setSelectedShops(prev =>
+                                                                prev.includes(keyId)
+                                                                    ? prev.filter(k => k !== keyId)
+                                                                    : [...prev, keyId]
+                                                            );
+                                                        }}
+                                                    />
+                                                    <span style={{ flex: 1, fontWeight: 'bold', whiteSpace: 'nowrap', overflow: 'visible' }}>{keyId}</span>
+                                                    <span style={{ fontSize: 11, color: '#999', whiteSpace: 'nowrap' }}>
+                                                        包含 {shops.filter(s => s.key_id === keyId).length} 家店铺
+                                                    </span>
+                                                </label>
+                                            );
+                                        })}
                                 </div>
                             )}
                         </div>
@@ -266,15 +347,12 @@ const PushManage: React.FC = () => {
                     </div>
                     <div className="push-form">
                         <div className="form-group">
-                            <label className="form-label">款式图片 <span style={{ color: 'red' }}>*</span></label>
-                            <input
-                                type="text"
-                                className="form-input"
-                                placeholder="输入图片URL"
+                            <ImageUpload
+                                label="款式图片"
                                 value={publicImage}
-                                onChange={e => setPublicImage(e.target.value)}
+                                onChange={setPublicImage}
+                                placeholder="点击或拖拽上传公推图片"
                             />
-                            {publicImage && <img src={publicImage} alt="Preview" className="image-preview" />}
                         </div>
 
                         <div className="form-group">
@@ -314,33 +392,6 @@ const PushManage: React.FC = () => {
                         <button className="btn btn-success" style={{ width: '100%' }} onClick={handlePublicPush}>
                             发布至公池
                         </button>
-                    </div>
-
-                    {/* 公池款式列表 */}
-                    <div style={{ marginTop: 24, borderTop: '1px solid var(--border-color)', paddingTop: 16 }}>
-                        <h3 style={{ fontSize: 14, marginBottom: 12, color: 'var(--text-secondary)' }}>📋 公池款式列表</h3>
-                        <div className="public-style-list">
-                            {sortedPublicStyles.map(item => (
-                                <div key={item.id} className={`public-style-item ${item.is_top ? 'is-top' : ''}`}>
-                                    <img src={item.image} alt="" className="public-style-image" />
-                                    <div className="public-style-info">
-                                        <div className="tag-list" style={{ marginBottom: 4 }}>
-                                            {item.tags.map(t => <span key={t} className="tag" style={{ fontSize: 10 }}>{t}</span>)}
-                                        </div>
-                                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                                            意向: {item.shops.length}/3
-                                        </div>
-                                    </div>
-                                    <button
-                                        className={`btn btn-sm ${item.is_top ? 'btn-warning' : 'btn-outline'}`}
-                                        onClick={() => handlePinTop(item.id)}
-                                        title={item.is_top ? '取消置顶' : '款式置顶'}
-                                    >
-                                        {item.is_top ? '📌 已置顶' : '📌 置顶'}
-                                    </button>
-                                </div>
-                            ))}
-                        </div>
                     </div>
                 </div>
             </div>

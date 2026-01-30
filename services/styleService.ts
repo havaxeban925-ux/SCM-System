@@ -1,10 +1,13 @@
 import { api } from '../lib/api';
 import { StyleDemand, PublicStyle } from '../lib/supabase';
+import { PaginatedResponse } from '../types';
 
 // 获取私推款式列表
-export async function getPrivateStyles(): Promise<StyleDemand[]> {
+export async function getPrivateStyles(shopId?: string): Promise<StyleDemand[]> {
     try {
-        return await api.get<StyleDemand[]>('/api/styles/private');
+        const url = shopId ? `/api/styles/private?shopId=${shopId}` : '/api/styles/private';
+        const res = await api.get<PaginatedResponse<StyleDemand>>(url);
+        return res.data || [];
     } catch (error) {
         console.error('Error fetching private styles:', error);
         return [];
@@ -14,7 +17,8 @@ export async function getPrivateStyles(): Promise<StyleDemand[]> {
 // 获取公池款式列表
 export async function getPublicStyles(): Promise<PublicStyle[]> {
     try {
-        return await api.get<PublicStyle[]>('/api/styles/public');
+        const res = await api.get<PaginatedResponse<PublicStyle>>('/api/styles/public');
+        return res.data || [];
     } catch (error) {
         console.error('Error fetching public styles:', error);
         return [];
@@ -61,5 +65,15 @@ export async function expressIntent(id: string): Promise<boolean> {
     } catch (error) {
         console.error('Error expressing intent:', error);
         return false;
+    }
+}
+
+// 获取名额统计
+export async function getQuotaStats(shopId: string): Promise<{ current: number; limit: number } | null> {
+    try {
+        return await api.get<{ current: number; limit: number }>(`/api/styles/quota-stats?shopId=${shopId}`);
+    } catch (error) {
+        console.error('Error fetching quota stats:', error);
+        return null;
     }
 }

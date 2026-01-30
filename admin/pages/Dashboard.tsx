@@ -55,18 +55,28 @@ const Dashboard: React.FC = () => {
             try {
                 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
 
-                // 使用专用的 dashboard API 获取所有数据
-                const dashboardRes = await fetch(`${API_BASE}/api/admin/dashboard`);
+                // 并行获取所有数据
+                const [dashboardRes, privateRes, publicRes] = await Promise.all([
+                    fetch(`${API_BASE}/api/admin/dashboard`),
+                    fetch(`${API_BASE}/api/styles/private?pageSize=1000`),
+                    fetch(`${API_BASE}/api/styles/public?pageSize=1000`)
+                ]);
+
                 if (!dashboardRes.ok) throw new Error('Failed to fetch dashboard data');
 
                 const dashboardData = await dashboardRes.json();
+                const privateData = await privateRes.json();
+                const publicData = await publicRes.json();
+
                 const { stats: apiStats, shop_levels } = dashboardData;
+                const privateStyles = privateData.data || [];
+                const publicStyles = publicData.data || [];
 
                 // 设置统计数据
                 setStats({
                     keyCount: apiStats.key_total || 0,
                     shopCount: apiStats.shop_total || 0,
-                    spuCount: 0, // 暂无SPU统计接口
+                    spuCount: apiStats.spu_total || 0,
                     activeUsers: apiStats.user_total || 4,
                     styleOrderCount: apiStats.style_pending || 0,
                     pricingOrderCount: apiStats.pricing_pending || 0,
@@ -74,14 +84,22 @@ const Dashboard: React.FC = () => {
                     restockOrderCount: apiStats.restock_pending || 0
                 });
 
-                // 模拟推款统计（暂无专用接口）
+                // 计算真实的推款统计
+                const privatePending = privateStyles.filter((s: any) => s.status === 'new' || s.status === 'locked').length;
+                const privateAccepted = privateStyles.filter((s: any) => s.status === 'developing').length;
+                const privateInProgress = privateStyles.filter((s: any) => s.development_status && s.development_status !== 'success').length;
+
+                const publicTotal = publicStyles.length;
+                const publicFull = publicStyles.filter((s: any) => s.intent_count >= s.max_intents).length;
+                const publicIntent = publicStyles.filter((s: any) => s.intent_count > 0 && s.intent_count < s.max_intents).length;
+
                 setPushStats({
-                    privatePending: 12,
-                    privateAccepted: 45,
-                    privateInProgress: 18,
-                    publicTotal: 24,
-                    publicFull: 8,
-                    publicIntent: 16
+                    privatePending,
+                    privateAccepted,
+                    privateInProgress,
+                    publicTotal,
+                    publicFull,
+                    publicIntent
                 });
 
                 // 设置商家等级分布
@@ -97,31 +115,26 @@ const Dashboard: React.FC = () => {
 
             } catch (error) {
                 console.error('Failed to fetch dashboard data:', error);
-                // 使用模拟数据作为备用
+                // 使用空数据作为备用
                 setStats({
-                    keyCount: 18,
-                    shopCount: 42,
-                    spuCount: 256,
-                    activeUsers: 8,
-                    styleOrderCount: 12,
-                    pricingOrderCount: 15,
-                    anomalyOrderCount: 9,
-                    restockOrderCount: 35
+                    keyCount: 0,
+                    shopCount: 0,
+                    spuCount: 0,
+                    activeUsers: 0,
+                    styleOrderCount: 0,
+                    pricingOrderCount: 0,
+                    anomalyOrderCount: 0,
+                    restockOrderCount: 0
                 });
                 setPushStats({
-                    privatePending: 18,
-                    privateAccepted: 68,
-                    privateInProgress: 24,
-                    publicTotal: 36,
-                    publicFull: 12,
-                    publicIntent: 24
+                    privatePending: 0,
+                    privateAccepted: 0,
+                    privateInProgress: 0,
+                    publicTotal: 0,
+                    publicFull: 0,
+                    publicIntent: 0
                 });
-                setShopLevelData([
-                    { level: 'S级', count: 5, color: '#FF6B6B' },
-                    { level: 'A级', count: 12, color: '#4ECDC4' },
-                    { level: 'B级', count: 15, color: '#45B7D1' },
-                    { level: 'C级', count: 10, color: '#96CEB4' },
-                ]);
+                setShopLevelData([]);
             } finally {
                 setLoading(false);
             }

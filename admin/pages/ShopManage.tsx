@@ -18,6 +18,15 @@ interface ShopGroup {
     level: 'S' | 'A' | 'B' | 'C' | 'N';
 }
 
+interface PendingRegistration {
+    id: string;
+    username: string;
+    shop_name: string;
+    status: '待审批' | '已通过' | '已驳回';
+    submit_time: string;
+    reject_reason?: string;
+}
+
 const ShopManage: React.FC = () => {
     const [activeTab, setActiveTab] = useState<'list' | 'pending'>('list');
     const [allGroups, setAllGroups] = useState<ShopGroup[]>([]);
@@ -56,82 +65,20 @@ const ShopManage: React.FC = () => {
     // Sort State
     const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' }>({ key: 'level', direction: 'asc' });
 
-    // 待审批商家注册申请
-    interface PendingRegistration {
-        id: string;
-        username: string;
-        shop_name: string;
-        status: '待审批' | '已通过' | '已驳回';
-        submit_time: string;
-        reject_reason?: string;
-    }
+    // Pending Registrations
+    const [pendingRegistrations, setPendingRegistrations] = useState<PendingRegistration[]>([]);
+    const [pendingLoading, setPendingLoading] = useState(false);
 
-    const [pendingRegistrations, setPendingRegistrations] = useState<PendingRegistration[]>([
-        { id: '1', username: 'newshop001', shop_name: '潮流精品店', status: '待审批', submit_time: '2024-05-25 14:30' },
-        { id: '2', username: 'fashion2024', shop_name: '时尚女装馆', status: '待审批', submit_time: '2024-05-25 10:15' },
-        { id: '3', username: 'styleking', shop_name: '风格之王', status: '已通过', submit_time: '2024-05-24 16:20' },
-        { id: '4', username: 'elegance', shop_name: '优雅衣橱', status: '已驳回', submit_time: '2024-05-23 09:45', reject_reason: '店铺名称重复' },
-    ]);
-
-    const handleApprove = (id: string) => {
-        setPendingRegistrations(pendingRegistrations.map(r => r.id === id ? { ...r, status: '已通过' as const } : r));
-        alert('商家审批通过，已创建账号');
-    };
-
-    const handleReject = (id: string) => {
-        const reason = prompt('请输入驳回原因：');
-        if (reason) {
-            setPendingRegistrations(pendingRegistrations.map(r => r.id === id ? { ...r, status: '已驳回' as const, reject_reason: reason } : r));
-            alert('已驳回该申请');
-        }
-    };
-
-    useEffect(() => {
-        loadAllShops();
-    }, []);
-
-    // Filter -> Sort -> Paginate
-    useEffect(() => {
-        // 1. Filter
-        let result = [...allGroups];
-        if (search) {
-            const lower = search.toLowerCase();
-            result = result.filter(g =>
-                g.key_id.toLowerCase().includes(lower) ||
-                g.shops.some(s => s.shop_name.toLowerCase().includes(lower))
-            );
-        }
-
-        // 2. Sort
-        result.sort((a, b) => {
-            if (sortConfig.key === 'level') {
-                const levelOrder = { S: 0, A: 1, B: 2, C: 3, N: 4, undefined: 5 };
-                const valA = levelOrder[a.level as keyof typeof levelOrder] ?? 5;
-                const valB = levelOrder[b.level as keyof typeof levelOrder] ?? 5;
-                return sortConfig.direction === 'asc' ? valA - valB : valB - valA;
-            }
-            if (sortConfig.key === 'shopCount') {
-                return sortConfig.direction === 'asc'
-                    ? a.shops.length - b.shops.length
-                    : b.shops.length - a.shops.length;
-            }
-            if (sortConfig.key === 'key_id') {
-                return sortConfig.direction === 'asc'
-                    ? a.key_id.localeCompare(b.key_id)
-                    : b.key_id.localeCompare(a.key_id);
-            }
-            return 0;
-        });
-
-        setTotalGroups(result.length);
-
-        // 3. Paginate
-        const start = (page - 1) * pageSize;
-        const end = start + pageSize;
-        setDisplayGroups(result.slice(start, end));
-
-    }, [allGroups, search, sortConfig, page, pageSize]);
-
+    // Approve Modal State
+    const [showApproveModal, setShowApproveModal] = useState(false);
+    const [approveForm, setApproveForm] = useState({
+        userId: '',
+        username: '',
+        shop_name: '',
+        keyId: '',
+        shopCode: '',
+        level: 'N' as Shop['level']
+    });
 
     const loadAllShops = async () => {
         setLoading(true);
@@ -162,9 +109,10 @@ const ShopManage: React.FC = () => {
                 page++;
             }
 
-            // Group by KEY
+            // Group by KEY - 处理空 key_id 的情况
+            // 如果 key_id 为空，则使用 shop_name 作为临时分组键
             const grouped = allFetched.reduce((acc, shop) => {
-                const keyId = (shop.key_id || '未分类').trim();
+                const keyId = (shop.key_id && shop.key_id.trim()) ? shop.key_id.trim() : shop.shop_name || '未分类';
                 if (!acc[keyId]) {
                     acc[keyId] = {
                         key_id: keyId,
@@ -180,9 +128,142 @@ const ShopManage: React.FC = () => {
             setAllGroups(Object.values(grouped));
         } catch (err: any) {
             console.error('Failed to load shops:', err);
-            // alert(`加载列表失败: ${err.message}`); // Silent fail better?
         }
         setLoading(false);
+    };
+
+    const loadPendingRegistrations = async () => {
+        setPendingLoading(true);
+        try {
+            const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+            const res = await fetch(`${baseUrl}/api/auth/pending`);
+            if (!res.ok) throw new Error(`Fetch failed: ${res.status}`);
+            const json = await res.json();
+            setPendingRegistrations(json.data || []);
+        } catch (err: any) {
+            console.error('Failed to load pending registrations:', err);
+        }
+        setPendingLoading(false);
+    };
+
+    useEffect(() => {
+        loadAllShops();
+        loadPendingRegistrations();
+
+        // 自动刷新待审批列表 (30秒轮询)
+        const interval = setInterval(() => {
+            loadPendingRegistrations();
+        }, 30000);
+
+        return () => clearInterval(interval);
+    }, []);
+
+    // Filter -> Sort -> Paginate
+    useEffect(() => {
+        // 1. Filter
+        let result = [...allGroups];
+        if (search) {
+            const lower = search.toLowerCase();
+            result = result.filter(g =>
+                g.key_id.toLowerCase().includes(lower) ||
+                g.shops.some(s => s.shop_name.toLowerCase().includes(lower))
+            );
+        }
+
+        // 2. Sort
+        result.sort((a, b) => {
+            if (sortConfig.key === 'level') {
+                const levelOrder = { S: 0, A: 1, B: 2, C: 3, N: 4, undefined: 5 };
+                const valA = levelOrder[a.level as keyof typeof levelOrder] ?? 5;
+                const valB = levelOrder[b.level as keyof typeof levelOrder] ?? 5;
+                if (valA !== valB) return sortConfig.direction === 'asc' ? valA - valB : valB - valA;
+            }
+            if (sortConfig.key === 'shopCount') {
+                const diff = a.shops.length - b.shops.length;
+                if (diff !== 0) return sortConfig.direction === 'asc' ? diff : -diff;
+            }
+            if (sortConfig.key === 'key_id') {
+                return sortConfig.direction === 'asc'
+                    ? a.key_id.localeCompare(b.key_id)
+                    : b.key_id.localeCompare(a.key_id);
+            }
+            return 0;
+        });
+
+        setTotalGroups(result.length);
+
+        // 3. Paginate
+        const start = (page - 1) * pageSize;
+        const end = start + pageSize;
+        setDisplayGroups(result.slice(start, end));
+
+    }, [allGroups, search, sortConfig, page, pageSize]);
+
+    const openApproveModal = (reg: PendingRegistration) => {
+        setApproveForm({
+            userId: reg.id,
+            username: reg.username,
+            shop_name: reg.shop_name,
+            keyId: '',
+            shopCode: '',
+            level: 'N'
+        });
+        setShowApproveModal(true);
+    };
+
+    const handleConfirmApprove = async () => {
+        if (!approveForm.keyId || !approveForm.shopCode) {
+            alert('请填写 KEY 和 店铺ID');
+            return;
+        }
+
+        try {
+            const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+            const res = await fetch(`${baseUrl}/api/auth/approve`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    userId: approveForm.userId,
+                    keyId: approveForm.keyId,
+                    shopCode: approveForm.shopCode,
+                    level: approveForm.level
+                })
+            });
+            if (!res.ok) {
+                const err = await res.json();
+                alert(`审批失败: ${err.error}`);
+                return;
+            }
+            alert('商家审批通过！');
+            setShowApproveModal(false);
+            loadPendingRegistrations();
+            loadAllShops();
+        } catch (err: any) {
+            alert(`操作失败: ${err.message}`);
+        }
+    };
+
+    const handleReject = async (id: string) => {
+        const reason = prompt('请输入驳回原因：');
+        if (!reason) return;
+
+        try {
+            const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+            const res = await fetch(`${baseUrl}/api/auth/reject`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId: id, reason })
+            });
+            if (!res.ok) {
+                const err = await res.json();
+                alert(`驳回失败: ${err.error}`);
+                return;
+            }
+            alert('已驳回该申请');
+            loadPendingRegistrations();
+        } catch (err: any) {
+            alert(`操作失败: ${err.message}`);
+        }
     };
 
     const handleSort = (key: string) => {
@@ -195,7 +276,6 @@ const ShopManage: React.FC = () => {
 
     const handleSearch = () => {
         setPage(1);
-        // Search is handled by useEffect
     };
 
     const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -214,7 +294,6 @@ const ShopManage: React.FC = () => {
     };
 
     const handleSubmit = async () => {
-        // ... same as before
         try {
             if (addMode === 'single') {
                 if (!formData.key_id || !formData.shop_name) {
@@ -321,7 +400,7 @@ const ShopManage: React.FC = () => {
                                 borderRadius: 10,
                                 fontSize: 11
                             }}>
-                                {pendingRegistrations.filter(r => r.status === '待审批').length}
+                                {pendingRegistrations.filter(r => r.status === 'pending').length}
                             </span>
                         )}
                     </button>
@@ -422,55 +501,74 @@ const ShopManage: React.FC = () => {
                 {/* 待审批商家视图 */}
                 {activeTab === 'pending' && (
                     <div style={{ padding: 16 }}>
-                        <table className="data-table">
-                            <thead>
-                                <tr>
-                                    <th>账号</th>
-                                    <th>店铺名称</th>
-                                    <th>提交时间</th>
-                                    <th>状态</th>
-                                    <th>操作</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {pendingRegistrations.map(reg => (
-                                    <tr key={reg.id}>
-                                        <td style={{ fontFamily: 'monospace' }}>{reg.username}</td>
-                                        <td style={{ fontWeight: 500 }}>{reg.shop_name}</td>
-                                        <td style={{ fontSize: 12, color: 'var(--text-muted)' }}>{reg.submit_time}</td>
-                                        <td>
-                                            <span className={`status-badge ${reg.status === '待审批' ? 'processing' :
-                                                    reg.status === '已通过' ? 'completed' : 'rejected'
-                                                }`}>
-                                                {reg.status}
-                                            </span>
-                                            {reg.reject_reason && (
-                                                <span style={{ marginLeft: 8, fontSize: 11, color: 'var(--danger)' }}>
-                                                    ({reg.reject_reason})
-                                                </span>
-                                            )}
-                                        </td>
-                                        <td>
-                                            {reg.status === '待审批' && (
-                                                <div className="action-buttons">
-                                                    <button className="btn btn-sm btn-success" onClick={() => handleApprove(reg.id)}>
-                                                        通过
-                                                    </button>
-                                                    <button className="btn btn-sm btn-outline" style={{ color: 'var(--danger)', borderColor: 'var(--danger)' }} onClick={() => handleReject(reg.id)}>
-                                                        驳回
-                                                    </button>
-                                                </div>
-                                            )}
-                                        </td>
+                        {pendingLoading ? (
+                            <div className="empty-state">加载中...</div>
+                        ) : pendingRegistrations.length === 0 ? (
+                            <div className="empty-state">
+                                <span className="material-symbols-outlined">how_to_reg</span>
+                                <p>暂无待审批的注册申请</p>
+                            </div>
+                        ) : (
+                            <table className="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>账号</th>
+                                        <th>店铺名称</th>
+                                        <th>提交时间</th>
+                                        <th>状态</th>
+                                        <th>操作</th>
                                     </tr>
-                                ))}
-                            </tbody>
-                        </table>
+                                </thead>
+                                <tbody>
+                                    {pendingRegistrations.map(reg => {
+                                        // 状态映射：后端返回英文 -> 前端显示中文
+                                        const statusMap: Record<string, string> = {
+                                            'pending': '待审批',
+                                            'approved': '已通过',
+                                            'rejected': '已驳回'
+                                        };
+                                        const displayStatus = statusMap[reg.status] || reg.status;
+
+                                        return (
+                                            <tr key={reg.id}>
+                                                <td style={{ fontFamily: 'monospace' }}>{reg.username}</td>
+                                                <td style={{ fontWeight: 500 }}>{reg.shop_name}</td>
+                                                <td style={{ fontSize: 12, color: 'var(--text-muted)' }}>{new Date(reg.created_at || Date.now()).toLocaleString()}</td>
+                                                <td>
+                                                    <span className={`status-badge ${reg.status === 'pending' ? 'processing' :
+                                                        reg.status === 'approved' ? 'completed' : 'rejected'
+                                                        }`}>
+                                                        {displayStatus}
+                                                    </span>
+                                                    {reg.reject_reason && (
+                                                        <span style={{ marginLeft: 8, fontSize: 11, color: 'var(--danger)' }}>
+                                                            ({reg.reject_reason})
+                                                        </span>
+                                                    )}
+                                                </td>
+                                                <td>
+                                                    {reg.status === 'pending' && (
+                                                        <div className="action-buttons">
+                                                            <button className="btn btn-sm btn-success" onClick={() => openApproveModal(reg)}>
+                                                                通过
+                                                            </button>
+                                                            <button className="btn btn-sm btn-outline" style={{ color: 'var(--danger)', borderColor: 'var(--danger)' }} onClick={() => handleReject(reg.id)}>
+                                                                驳回
+                                                            </button>
+                                                        </div>
+                                                    )}
+                                                </td>
+                                            </tr>
+                                        )
+                                    })}
+                                </tbody>
+                            </table>
+                        )}
                     </div>
                 )}
             </div>
 
-            {/* Drawer (Unchanged structure) */}
+            {/* Drawer */}
             <>
                 <div
                     className={`drawer-overlay ${selectedGroup ? 'open' : ''}`}
@@ -540,7 +638,6 @@ const ShopManage: React.FC = () => {
                                     )}
                                 </div>
                                 <div className="drawer-section">
-                                    {/* Role Permissions (Static) */}
                                     <div className="drawer-section-title">角色权限</div>
                                     <table className="data-table">
                                         <thead>
@@ -564,8 +661,7 @@ const ShopManage: React.FC = () => {
                 </div>
             </>
 
-            {/* Modals remain the same... reusing previous content if possible? No, file write replaces all. */}
-            {/* Delete Reason Modal */}
+            {/* DELETE MODAL */}
             {showDeleteModal && (
                 <div className="modal-overlay" style={{ zIndex: 1100 }}>
                     <div className="modal" style={{ width: 400 }}>
@@ -593,13 +689,12 @@ const ShopManage: React.FC = () => {
                 </div>
             )}
 
-            {/* Add Modal */}
+            {/* ADD MODAL */}
             {showAddModal && (
                 <div className="modal-overlay" onClick={() => setShowAddModal(false)}>
                     <div className="modal" onClick={e => e.stopPropagation()}>
                         <div className="modal-header"><span className="modal-title">添加商家</span></div>
                         <div className="modal-body">
-                            {/* Same add modal content as previous version */}
                             <div className="tabs" style={{ marginBottom: 20 }}>
                                 <button className={`tab ${addMode === 'single' ? 'active' : ''}`} onClick={() => setAddMode('single')}>单独录入</button>
                                 <button className={`tab ${addMode === 'batch' ? 'active' : ''}`} onClick={() => setAddMode('batch')}>批量导入</button>
@@ -628,6 +723,61 @@ const ShopManage: React.FC = () => {
                         <div className="modal-footer">
                             <button className="btn btn-outline" onClick={() => setShowAddModal(false)}>取消</button>
                             <button className="btn btn-primary" onClick={handleSubmit}>确认</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* APPROVE MODAL */}
+            {showApproveModal && (
+                <div className="modal-overlay" style={{ zIndex: 1200 }}>
+                    <div className="modal">
+                        <div className="modal-header">
+                            <span className="modal-title">审批通过 - 录入商家信息</span>
+                        </div>
+                        <div className="modal-body">
+                            <p style={{ marginBottom: 16 }}>
+                                正在批准商家 <b>{approveForm.shop_name}</b> ({approveForm.username})。
+                                请补充以下信息以创建店铺：
+                            </p>
+                            <div className="form-group">
+                                <label className="form-label">KEY <span style={{ color: 'red' }}>*</span></label>
+                                <input
+                                    type="text"
+                                    className="form-input"
+                                    placeholder="例如 KEY-001"
+                                    value={approveForm.keyId}
+                                    onChange={e => setApproveForm({ ...approveForm, keyId: e.target.value })}
+                                />
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label">店铺ID (ShopCode) <span style={{ color: 'red' }}>*</span></label>
+                                <input
+                                    type="text"
+                                    className="form-input"
+                                    placeholder="例如 SHOP-ABC"
+                                    value={approveForm.shopCode}
+                                    onChange={e => setApproveForm({ ...approveForm, shopCode: e.target.value })}
+                                />
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label">初始等级</label>
+                                <select
+                                    className="form-select"
+                                    value={approveForm.level}
+                                    onChange={e => setApproveForm({ ...approveForm, level: e.target.value as any })}
+                                >
+                                    <option value="S">S (破万)</option>
+                                    <option value="A">A (破五千)</option>
+                                    <option value="B">B (破千)</option>
+                                    <option value="C">C (破百)</option>
+                                    <option value="N">N (无动销)</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div className="modal-footer">
+                            <button className="btn btn-outline" onClick={() => setShowApproveModal(false)}>取消</button>
+                            <button className="btn btn-success" onClick={handleConfirmApprove}>确认通过</button>
                         </div>
                     </div>
                 </div>

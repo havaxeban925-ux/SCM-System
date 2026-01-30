@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
 interface StyleOrder {
     id: string;
@@ -13,128 +13,39 @@ interface StyleOrder {
 }
 
 const StyleOrderPage: React.FC = () => {
-    const [orders, setOrders] = useState<StyleOrder[]>([
-        {
-            id: '1',
-            shop_name: '韩都衣舍旗舰店',
-            style_name: '法式碎花连衣裙',
-            image_url: 'https://picsum.photos/seed/style1/100',
-            sub_type: '改图帮看',
-            submit_time: '2026-01-28 10:30',
-            status: '待处理',
-            content: '请帮忙看一下这个图片颜色是否正确，需要调整到更接近实物'
-        },
-        {
-            id: '2',
-            shop_name: '茵曼女装店',
-            style_name: '极简真丝衬衫',
-            image_url: 'https://picsum.photos/seed/style2/100',
-            sub_type: '打版帮看',
-            submit_time: '2026-01-28 14:00',
-            status: '待处理',
-            content: '版型有一点偏差，袖子长度需要确认'
-        },
-        {
-            id: '3',
-            shop_name: '欧时力官方旗舰店',
-            style_name: '复古大摆裙',
-            image_url: 'https://picsum.photos/seed/style3/100',
-            sub_type: '上传SPU',
-            submit_time: '2026-01-27 09:15',
-            status: '已处理',
-            spu_list: 'SPU-2026-001 SPU-2026-002 SPU-2026-003'
-        },
-        {
-            id: '4',
-            shop_name: '太平鸟女装',
-            style_name: '针织开衫外套',
-            image_url: 'https://picsum.photos/seed/style4/100',
-            sub_type: '改图帮看',
-            submit_time: '2026-01-28 08:45',
-            status: '待处理',
-            content: '图片背景需要更换，希望换成更简洁的纯色背景'
-        },
-        {
-            id: '5',
-            shop_name: '伊芙丽专卖店',
-            style_name: '高腰阔腿裤',
-            image_url: 'https://picsum.photos/seed/style5/100',
-            sub_type: '打版帮看',
-            submit_time: '2026-01-27 16:20',
-            status: '已处理',
-            content: '腰围尺寸可能有问题，请帮忙二次确认'
-        },
-        {
-            id: '6',
-            shop_name: '拉夏贝尔旗舰店',
-            style_name: '蕾丝拼接上衣',
-            image_url: 'https://picsum.photos/seed/style6/100',
-            sub_type: '上传SPU',
-            submit_time: '2026-01-28 11:00',
-            status: '待处理',
-            spu_list: 'SPU-2026-004 SPU-2026-005'
-        },
-        {
-            id: '7',
-            shop_name: 'ONLY女装官方店',
-            style_name: '毛呢大衣',
-            image_url: 'https://picsum.photos/seed/style7/100',
-            sub_type: '改图帮看',
-            submit_time: '2026-01-26 15:30',
-            status: '已驳回',
-            content: '图片清晰度不够，需要重新拍摄'
-        },
-        {
-            id: '8',
-            shop_name: '三彩服饰旗舰店',
-            style_name: '棉麻休闲套装',
-            image_url: 'https://picsum.photos/seed/style8/100',
-            sub_type: '打版帮看',
-            submit_time: '2026-01-28 09:00',
-            status: '待处理',
-            content: '整体版型需要调整，希望更加修身'
-        },
-        {
-            id: '9',
-            shop_name: '秋水伊人女装',
-            style_name: '印花雪纺裙',
-            image_url: 'https://picsum.photos/seed/style9/100',
-            sub_type: '上传SPU',
-            submit_time: '2026-01-27 13:40',
-            status: '已处理',
-            spu_list: 'SPU-2026-006 SPU-2026-007 SPU-2026-008 SPU-2026-009'
-        },
-        {
-            id: '10',
-            shop_name: '裂帛官方旗舰店',
-            style_name: '民族风刺绣外套',
-            image_url: 'https://picsum.photos/seed/style10/100',
-            sub_type: '改图帮看',
-            submit_time: '2026-01-28 14:30',
-            status: '待处理',
-            content: '刺绣细节图需要补拍，目前看不清楚花纹'
-        },
-        {
-            id: '11',
-            shop_name: '妖精的口袋',
-            style_name: '学院风百褶裙',
-            image_url: 'https://picsum.photos/seed/style11/100',
-            sub_type: '打版帮看',
-            submit_time: '2026-01-26 10:00',
-            status: '已处理',
-            content: '褶皱效果与预期有差异，请确认工艺'
-        },
-        {
-            id: '12',
-            shop_name: '诗凡黎女装店',
-            style_name: '西装马甲套装',
-            image_url: 'https://picsum.photos/seed/style12/100',
-            sub_type: '上传SPU',
-            submit_time: '2026-01-28 17:00',
-            status: '待处理',
-            spu_list: 'SPU-2026-010 SPU-2026-011'
-        },
-    ]);
+    const [orders, setOrders] = useState<StyleOrder[]>([]);
+
+    useEffect(() => {
+        const fetchOrders = async () => {
+            try {
+                const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+                // 使用 /api/admin/styles 获取款式数据，这里假设款式工单就是 b_style_demand
+                const res = await fetch(`${API_BASE}/api/admin/styles?pageSize=100`);
+                if (!res.ok) throw new Error('Failed to fetch style orders');
+                const data = await res.json();
+
+                const mappedOrders: StyleOrder[] = (data.data || []).map((item: any) => ({
+                    id: item.id,
+                    shop_name: item.shop_name || '未知店铺',
+                    style_name: item.name || '未命名款式',
+                    image_url: item.image_url || 'https://via.placeholder.com/100',
+                    // 如果 DB 没有 subtype，暂且根据 push_type 或者默认值
+                    sub_type: item.push_type === 'POOL' ? '上传SPU' : '改图帮看',
+                    submit_time: item.created_at ? new Date(item.created_at).toLocaleString() : '',
+                    // status 映射: new -> 待处理, developing -> 已处理
+                    status: item.status === 'new' || item.status === 'locked' ? '待处理' :
+                        item.status === 'abandoned' ? '已驳回' : '已处理',
+                    content: item.remark,
+                    spu_list: item.back_spu
+                }));
+                setOrders(mappedOrders);
+            } catch (error) {
+                console.error('Error fetching style orders:', error);
+            }
+        };
+
+        fetchOrders();
+    }, []);
 
     const [detailModal, setDetailModal] = useState<{ show: boolean; order: StyleOrder | null }>({ show: false, order: null });
     const [filter, setFilter] = useState<'all' | '改图帮看' | '打版帮看' | '上传SPU'>('all');

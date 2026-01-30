@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
 interface PricingOrder {
     id: string;
@@ -13,151 +13,40 @@ interface PricingOrder {
 }
 
 const PricingOrderPage: React.FC = () => {
-    const [orders, setOrders] = useState<PricingOrder[]>([
-        {
-            id: '1',
-            shop_name: '韩都衣舍旗舰店',
-            sub_type: '毛织类核价',
-            skc_codes: ['SKC-001', 'SKC-002'],
-            submit_time: '2026-01-28 10:30',
-            status: '未处理',
-            applied_price: 189
-        },
-        {
-            id: '2',
-            shop_name: '茵曼女装店',
-            sub_type: '非毛织类核价',
-            skc_codes: ['SKC-003'],
-            submit_time: '2026-01-28 14:00',
-            status: '处理中',
-            applied_price: 79
-        },
-        {
-            id: '3',
-            shop_name: '欧时力官方旗舰店',
-            sub_type: '同款同价',
-            skc_codes: ['SKC-004', 'SKC-005'],
-            submit_time: '2026-01-27 09:15',
-            status: '已处理',
-            applied_price: 259,
-            audited_price: 245
-        },
-        {
-            id: '4',
-            shop_name: '太平鸟女装',
-            sub_type: '申请涨价',
-            skc_codes: ['SKC-006'],
-            submit_time: '2026-01-27 11:00',
-            status: '待复核',
-            applied_price: 399,
-            audited_price: 365
-        },
-        {
-            id: '5',
-            shop_name: '伊芙丽专卖店',
-            sub_type: '毛织类核价',
-            skc_codes: ['SKC-007', 'SKC-008', 'SKC-009'],
-            submit_time: '2026-01-28 08:45',
-            status: '未处理',
-            applied_price: 299
-        },
-        {
-            id: '6',
-            shop_name: '拉夏贝尔旗舰店',
-            sub_type: '非毛织类核价',
-            skc_codes: ['SKC-010'],
-            submit_time: '2026-01-28 16:20',
-            status: '未处理',
-            applied_price: 129
-        },
-        {
-            id: '7',
-            shop_name: 'ONLY女装官方店',
-            sub_type: '同款同价',
-            skc_codes: ['SKC-011', 'SKC-012'],
-            submit_time: '2026-01-26 15:30',
-            status: '已处理',
-            applied_price: 349,
-            audited_price: 329
-        },
-        {
-            id: '8',
-            shop_name: '三彩服饰旗舰店',
-            sub_type: '申请涨价',
-            skc_codes: ['SKC-013'],
-            submit_time: '2026-01-28 09:00',
-            status: '处理中',
-            applied_price: 459,
-            audited_price: 420
-        },
-        {
-            id: '9',
-            shop_name: '秋水伊人女装',
-            sub_type: '毛织类核价',
-            skc_codes: ['SKC-014', 'SKC-015'],
-            submit_time: '2026-01-27 13:40',
-            status: '待复核',
-            applied_price: 219,
-            audited_price: 199
-        },
-        {
-            id: '10',
-            shop_name: '裂帛官方旗舰店',
-            sub_type: '非毛织类核价',
-            skc_codes: ['SKC-016', 'SKC-017', 'SKC-018'],
-            submit_time: '2026-01-28 11:15',
-            status: '未处理',
-            applied_price: 159
-        },
-        {
-            id: '11',
-            shop_name: '妖精的口袋',
-            sub_type: '同款同价',
-            skc_codes: ['SKC-019'],
-            submit_time: '2026-01-26 10:00',
-            status: '已处理',
-            applied_price: 289,
-            audited_price: 269
-        },
-        {
-            id: '12',
-            shop_name: '诗凡黎女装店',
-            sub_type: '申请涨价',
-            skc_codes: ['SKC-020', 'SKC-021'],
-            submit_time: '2026-01-28 14:30',
-            status: '未处理',
-            applied_price: 529
-        },
-        {
-            id: '13',
-            shop_name: 'VERO MODA官方店',
-            sub_type: '毛织类核价',
-            skc_codes: ['SKC-022'],
-            submit_time: '2026-01-27 17:00',
-            status: '处理中',
-            applied_price: 379
-        },
-        {
-            id: '14',
-            shop_name: '乐町潮流女装',
-            sub_type: '非毛织类核价',
-            skc_codes: ['SKC-023', 'SKC-024'],
-            submit_time: '2026-01-25 09:30',
-            status: '已处理',
-            applied_price: 199,
-            audited_price: 185
-        },
-        {
-            id: '15',
-            shop_name: 'MO&Co.旗舰店',
-            sub_type: '申请涨价',
-            skc_codes: ['SKC-025'],
-            submit_time: '2026-01-28 10:00',
-            status: '待复核',
-            applied_price: 699,
-            audited_price: 649
-        },
-    ]);
+    const [orders, setOrders] = useState<PricingOrder[]>([]);
+
+    useEffect(() => {
+        const fetchOrders = async () => {
+            try {
+                const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+                const res = await fetch(`${API_BASE}/api/requests?type=pricing&pageSize=100`);
+                if (!res.ok) throw new Error('Failed to fetch pricing orders');
+                const data = await res.json();
+
+                const mappedOrders: PricingOrder[] = (data.data || []).map((item: any) => {
+                    const detail = item.pricing_details?.[0] || {};
+                    return {
+                        id: item.id,
+                        shop_name: item.shop_name || '未知店铺',
+                        sub_type: item.sub_type,
+                        skc_codes: item.target_codes || [],
+                        submit_time: item.submit_time ? new Date(item.submit_time).toLocaleString() : '',
+                        status: item.status === 'processing' ? '处理中' :
+                            item.status === 'completed' ? '已处理' :
+                                item.status === 'rejected' ? '已处理' : '未处理', // Map 'approved'/'rejected' to '已处理' or keep statuses? UI uses: 未处理, 处理中, 已处理, 待复核
+                        applied_price: detail.appliedPrice || 0,
+                        audited_price: detail.buyerPrice,
+                        review_price: detail.secondPrice
+                    };
+                });
+                setOrders(mappedOrders);
+            } catch (error) {
+                console.error('Error fetching pricing orders:', error);
+            }
+        };
+
+        fetchOrders();
+    }, []);
 
     const [filter, setFilter] = useState<'all' | '未处理' | '处理中' | '已处理' | '待复核'>('all');
     const [detailModal, setDetailModal] = useState<{ show: boolean; order: PricingOrder | null }>({ show: false, order: null });

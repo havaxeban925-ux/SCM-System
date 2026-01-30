@@ -8,28 +8,8 @@ interface SpuItem {
 }
 
 const SpuLibrary: React.FC = () => {
-    const [items, setItems] = useState<SpuItem[]>([
-        { id: '1', image_url: 'https://picsum.photos/seed/spu1/100', link: 'https://item.taobao.com/item.htm?id=7654321001', spus: 'SPU-2026-001 SPU-2026-002' },
-        { id: '2', image_url: 'https://picsum.photos/seed/spu2/100', link: 'https://item.taobao.com/item.htm?id=7654321002', spus: 'SPU-2026-003' },
-        { id: '3', image_url: 'https://picsum.photos/seed/spu3/100', link: 'https://item.taobao.com/item.htm?id=7654321003', spus: 'SPU-2026-004 SPU-2026-005 SPU-2026-006' },
-        { id: '4', image_url: 'https://picsum.photos/seed/spu4/100', link: 'https://item.taobao.com/item.htm?id=7654321004', spus: 'SPU-2026-007' },
-        { id: '5', image_url: 'https://picsum.photos/seed/spu5/100', link: 'https://item.taobao.com/item.htm?id=7654321005', spus: 'SPU-2026-008 SPU-2026-009' },
-        { id: '6', image_url: 'https://picsum.photos/seed/spu6/100', link: 'https://item.taobao.com/item.htm?id=7654321006', spus: 'SPU-2026-010' },
-        { id: '7', image_url: 'https://picsum.photos/seed/spu7/100', link: 'https://item.taobao.com/item.htm?id=7654321007', spus: 'SPU-2026-011 SPU-2026-012 SPU-2026-013' },
-        { id: '8', image_url: 'https://picsum.photos/seed/spu8/100', link: 'https://item.taobao.com/item.htm?id=7654321008', spus: 'SPU-2026-014' },
-        { id: '9', image_url: 'https://picsum.photos/seed/spu9/100', link: 'https://item.taobao.com/item.htm?id=7654321009', spus: 'SPU-2026-015 SPU-2026-016' },
-        { id: '10', image_url: 'https://picsum.photos/seed/spu10/100', link: 'https://item.taobao.com/item.htm?id=7654321010', spus: 'SPU-2026-017 SPU-2026-018 SPU-2026-019 SPU-2026-020' },
-        { id: '11', image_url: 'https://picsum.photos/seed/spu11/100', link: 'https://detail.tmall.com/item.htm?id=8001234001', spus: 'SPU-2026-021' },
-        { id: '12', image_url: 'https://picsum.photos/seed/spu12/100', link: 'https://detail.tmall.com/item.htm?id=8001234002', spus: 'SPU-2026-022 SPU-2026-023' },
-        { id: '13', image_url: 'https://picsum.photos/seed/spu13/100', link: 'https://detail.tmall.com/item.htm?id=8001234003', spus: 'SPU-2026-024 SPU-2026-025 SPU-2026-026' },
-        { id: '14', image_url: 'https://picsum.photos/seed/spu14/100', link: 'https://detail.tmall.com/item.htm?id=8001234004', spus: 'SPU-2026-027' },
-        { id: '15', image_url: 'https://picsum.photos/seed/spu15/100', link: 'https://detail.tmall.com/item.htm?id=8001234005', spus: 'SPU-2026-028 SPU-2026-029' },
-        { id: '16', image_url: 'https://picsum.photos/seed/spu16/100', link: 'https://item.jd.com/100056789001.html', spus: 'SPU-2026-030' },
-        { id: '17', image_url: 'https://picsum.photos/seed/spu17/100', link: 'https://item.jd.com/100056789002.html', spus: 'SPU-2026-031 SPU-2026-032 SPU-2026-033' },
-        { id: '18', image_url: 'https://picsum.photos/seed/spu18/100', link: 'https://item.jd.com/100056789003.html', spus: 'SPU-2026-034 SPU-2026-035' },
-        { id: '19', image_url: 'https://picsum.photos/seed/spu19/100', link: 'https://item.jd.com/100056789004.html', spus: 'SPU-2026-036' },
-        { id: '20', image_url: 'https://picsum.photos/seed/spu20/100', link: 'https://item.jd.com/100056789005.html', spus: 'SPU-2026-037 SPU-2026-038 SPU-2026-039 SPU-2026-040' },
-    ]);
+    // SPU 数据将来自商家上传，初始为空
+    const [items, setItems] = useState<SpuItem[]>([]);
 
     const [showDeleteModal, setShowDeleteModal] = useState(false);
     const [deleteInput, setDeleteInput] = useState('');

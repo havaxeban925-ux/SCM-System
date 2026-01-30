@@ -1,10 +1,12 @@
 import { api } from '../lib/api';
 import { RequestRecord } from '../lib/supabase';
+import { PaginatedResponse } from '../types';
 
 // 获取申请记录列表
 export async function getRequestRecords(): Promise<RequestRecord[]> {
     try {
-        return await api.get<RequestRecord[]>('/api/requests');
+        const res = await api.get<PaginatedResponse<RequestRecord>>('/api/requests');
+        return res.data || [];
     } catch (error) {
         console.error('Error fetching request records:', error);
         return [];

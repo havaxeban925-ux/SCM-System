@@ -1,4 +1,11 @@
 
+export interface PaginatedResponse<T> {
+  data: T[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
 export enum AppView {
   STYLE_WORKBENCH = 'STYLE_WORKBENCH',
   DEVELOPMENT_PROGRESS = 'DEVELOPMENT_PROGRESS',

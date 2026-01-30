@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
 interface PushRecord {
     id: string;
@@ -23,60 +23,10 @@ interface Shop {
 }
 
 const PushHistory: React.FC = () => {
-    const [records, setRecords] = useState<PushRecord[]>([
-        {
-            id: '1',
-            link: 'https://example.com/style/001',
-            image_url: 'https://picsum.photos/seed/h1/100',
-            style_name: '法式优雅碎花连衣裙',
-            push_type: 'private',
-            push_time: '2024-05-20 10:30',
-            target_count: 3, // 上限固定为3
-            accepted_count: 1,
-            shops: [
-                { id: '1', name: '示例官方旗舰店', status: 'accepted' },
-                { id: '2', name: '名品潮流馆', status: 'rejected' }, // 拒绝后可回刷
-                { id: '3', name: '新店测试', status: 'pending' },
-            ]
-        },
-        {
-            id: '2',
-            link: 'https://example.com/style/002',
-            image_url: 'https://picsum.photos/seed/h2/100',
-            style_name: '极简廓形真丝衬衫',
-            push_type: 'private',
-            push_time: '2024-05-21 14:00',
-            target_count: 3, // 上限固定为3
-            accepted_count: 0,
-            shops: [
-                { id: '4', name: '店铺A', status: 'rejected' },
-                { id: '5', name: '店铺B', status: 'rejected' },
-                { id: '6', name: '店铺C', status: 'rejected' },
-                { id: '7', name: '店铺D', status: 'rejected' },
-            ]
-        },
-        {
-            id: '3',
-            link: 'https://example.com/style/003',
-            image_url: 'https://picsum.photos/seed/h3/100',
-            style_name: '复古赫本风大摆裙',
-            push_type: 'public',
-            push_time: '2024-05-22 09:15',
-            target_count: 3, // 上限固定为3
-            accepted_count: 1,
-            shops: [
-                { id: '8', name: '赫本工作室', status: 'accepted' },
-                { id: '9', name: '意式精品馆', status: 'pending' },
-            ]
-        },
-    ]);
-
-    const mockShops: Shop[] = [
-        { id: '1', shop_name: '示例官方旗舰店', key_id: 'KEY-001' },
-        { id: '2', shop_name: '名品潮流馆', key_id: 'KEY-002' },
-        { id: '3', shop_name: '新店测试', key_id: 'KEY-003' },
-        { id: '4', shop_name: '赫本工作室', key_id: 'KEY-004' },
-    ];
+    // 推款历史数据将从 API 获取，初始为空
+    const [records, setRecords] = useState<PushRecord[]>([]);
+    const [shops, setShops] = useState<Shop[]>([]);
+    const [loading, setLoading] = useState(true);
 
     const [filter, setFilter] = useState<'all' | 'private' | 'public'>('all');
     const [detailModal, setDetailModal] = useState<{ show: boolean; record: PushRecord | null }>({ show: false, record: null });
@@ -84,8 +34,70 @@ const PushHistory: React.FC = () => {
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedShops, setSelectedShops] = useState<string[]>([]);
 
+    useEffect(() => {
+        const fetchData = async () => {
+            try {
+                const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+
+                // Fetch push records from b_style_demand
+                const [privateRes, publicRes, shopsRes] = await Promise.all([
+                    fetch(`${API_BASE}/api/styles/private?pageSize=100`),
+                    fetch(`${API_BASE}/api/styles/public?pageSize=100`),
+                    fetch(`${API_BASE}/api/admin/shops?pageSize=1000`)
+                ]);
+
+                const privateData = await privateRes.json();
+                const publicData = await publicRes.json();
+                const shopsData = await shopsRes.json();
+
+                // Transform private styles to PushRecord format
+                const privateRecords: PushRecord[] = (privateData.data || []).map((s: any) => ({
+                    id: s.id,
+                    link: s.ref_link || '',
+                    image_url: s.image_url || '',
+                    style_name: s.name || '未命名款式',
+                    push_type: 'private' as const,
+                    push_time: new Date(s.created_at).toLocaleString(),
+                    target_count: 3,
+                    accepted_count: s.status === 'developing' ? 1 : 0,
+                    shops: [{
+                        id: s.shop_id || '',
+                        name: s.shop_name || '未知店铺',
+                        status: s.status === 'developing' ? 'accepted' : 'pending' as 'pending' | 'accepted' | 'rejected'
+                    }]
+                }));
+
+                // Transform public styles to PushRecord format
+                const publicRecords: PushRecord[] = (publicData.data || []).map((s: any) => ({
+                    id: s.id,
+                    link: '',
+                    image_url: s.image_url || '',
+                    style_name: s.name || '未命名款式',
+                    push_type: 'public' as const,
+                    push_time: new Date(s.created_at).toLocaleString(),
+                    target_count: s.max_intents || 3,
+                    accepted_count: s.intent_count || 0,
+                    shops: []
+                }));
+
+                setRecords([...privateRecords, ...publicRecords]);
+                setShops((shopsData.data || []).map((s: any) => ({
+                    id: s.id,
+                    shop_name: s.shop_name,
+                    key_id: s.key_id
+                })));
+            } catch (err) {
+                console.error('Error fetching push history:', err);
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        fetchData();
+    }, []);
+
     const filteredRecords = records.filter(r => filter === 'all' || r.push_type === filter);
-    const filteredShops = mockShops.filter(s =>
+    const filteredShops = shops.filter(s =>
         s.shop_name.toLowerCase().includes(searchTerm.toLowerCase())
     );
 

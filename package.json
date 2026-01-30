@@ -5,8 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "server": "tsx --env-file=.env.local server/index.ts",
-    "dev:all": "concurrently \"npm run dev\" \"npm run server\"",
+    "dev:admin": "vite admin --config admin/vite.config.ts",
+    "server": "tsx server/index.ts",
+    "dev:all": "concurrently \"npm run dev\" \"npm run dev:admin\" \"npm run server\"",
     "build": "vite build",
     "preview": "vite preview",
     "test": "vitest",
@@ -23,9 +24,12 @@
   "dependencies": {
     "@google/genai": "^1.38.0",
     "@supabase/supabase-js": "^2.47.0",
+    "@types/node-cron": "^3.0.11",
     "cors": "^2.8.6",
     "express": "^5.2.1",
     "iconv-lite": "^0.7.2",
+    "node-cron": "^4.2.1",
+    "pptxgenjs": "^4.0.1",
     "react": "^19.2.3",
     "react-dom": "^19.2.3"
   },

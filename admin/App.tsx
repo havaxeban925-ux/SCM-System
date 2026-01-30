@@ -36,6 +36,9 @@ const App: React.FC = () => {
     const [requestMenuOpen, setRequestMenuOpen] = useState(true);
     const [requestTab, setRequestTab] = useState<any>('style'); // Using any to avoid import issues for now, or string
 
+    const [isRegistering, setIsRegistering] = useState(false);
+    const [registerForm, setRegisterForm] = useState({ username: '', password: '', confirmPassword: '' });
+
     const handleLogin = () => {
         const avatar = USER_AVATARS[loginForm.username];
         if (!avatar) {
@@ -50,6 +53,43 @@ const App: React.FC = () => {
         }
         setUser({ name: loginForm.username, avatar });
         setLoginError('');
+    };
+
+    const handleRegister = async () => {
+        if (!registerForm.username || !registerForm.password) {
+            setLoginError('请输入用户名和密码');
+            return;
+        }
+        if (registerForm.password !== registerForm.confirmPassword) {
+            setLoginError('两次密码输入不一致');
+            return;
+        }
+
+        try {
+            const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+            const res = await fetch(`${API_BASE}/api/auth/register`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    username: registerForm.username,
+                    password: registerForm.password
+                })
+            });
+
+            const data = await res.json();
+            if (!res.ok) {
+                setLoginError(data.error || '注册失败');
+                return;
+            }
+
+            // 注册成功后自动登录（这里简化为切换回登录页或直接登录，用户期望是后端接收到了）
+            alert('注册成功！后端已接收。请登录。');
+            setIsRegistering(false);
+            setLoginForm({ username: registerForm.username, password: '' });
+            setLoginError('');
+        } catch (err) {
+            setLoginError('请求失败，请检查后端服务是否启动');
+        }
     };
 
     const handleLogout = () => {
@@ -67,37 +107,97 @@ const App: React.FC = () => {
 
                     {loginError && <div className="login-error">{loginError}</div>}
 
-                    <div className="form-group">
-                        <label className="form-label">账号</label>
-                        <input
-                            type="text"
-                            className="form-input"
-                            placeholder="输入角色名称"
-                            value={loginForm.username}
-                            onChange={e => setLoginForm({ ...loginForm, username: e.target.value })}
-                            onKeyDown={e => e.key === 'Enter' && handleLogin()}
-                        />
-                    </div>
+                    {!isRegistering ? (
+                        <>
+                            <div className="form-group">
+                                <label className="form-label">账号</label>
+                                <input
+                                    type="text"
+                                    className="form-input"
+                                    placeholder="输入角色名称"
+                                    value={loginForm.username}
+                                    onChange={e => setLoginForm({ ...loginForm, username: e.target.value })}
+                                    onKeyDown={e => e.key === 'Enter' && handleLogin()}
+                                />
+                            </div>
 
-                    <div className="form-group">
-                        <label className="form-label">密码</label>
-                        <input
-                            type="password"
-                            className="form-input"
-                            placeholder="输入密码"
-                            value={loginForm.password}
-                            onChange={e => setLoginForm({ ...loginForm, password: e.target.value })}
-                            onKeyDown={e => e.key === 'Enter' && handleLogin()}
-                        />
-                    </div>
+                            <div className="form-group">
+                                <label className="form-label">密码</label>
+                                <input
+                                    type="password"
+                                    className="form-input"
+                                    placeholder="输入密码"
+                                    value={loginForm.password}
+                                    onChange={e => setLoginForm({ ...loginForm, password: e.target.value })}
+                                    onKeyDown={e => e.key === 'Enter' && handleLogin()}
+                                />
+                            </div>
 
-                    <button
-                        className="btn btn-primary"
-                        style={{ width: '100%', marginTop: 8, padding: '12px' }}
-                        onClick={handleLogin}
-                    >
-                        登录
-                    </button>
+                            <button
+                                className="btn btn-primary"
+                                style={{ width: '100%', marginTop: 8, padding: '12px' }}
+                                onClick={handleLogin}
+                            >
+                                登录
+                            </button>
+                        </>
+                    ) : (
+                        <>
+                            <div className="form-group">
+                                <label className="form-label">账号</label>
+                                <input
+                                    type="text"
+                                    className="form-input"
+                                    placeholder="设置账号"
+                                    value={registerForm.username}
+                                    onChange={e => setRegisterForm({ ...registerForm, username: e.target.value })}
+                                />
+                            </div>
+
+                            <div className="form-group">
+                                <label className="form-label">密码</label>
+                                <input
+                                    type="password"
+                                    className="form-input"
+                                    placeholder="设置密码"
+                                    value={registerForm.password}
+                                    onChange={e => setRegisterForm({ ...registerForm, password: e.target.value })}
+                                />
+                            </div>
+
+                            <div className="form-group">
+                                <label className="form-label">确认密码</label>
+                                <input
+                                    type="password"
+                                    className="form-input"
+                                    placeholder="再次输入密码"
+                                    value={registerForm.confirmPassword}
+                                    onChange={e => setRegisterForm({ ...registerForm, confirmPassword: e.target.value })}
+                                    onKeyDown={e => e.key === 'Enter' && handleRegister()}
+                                />
+                            </div>
+
+                            <button
+                                className="btn btn-success"
+                                style={{ width: '100%', marginTop: 8, padding: '12px' }}
+                                onClick={handleRegister}
+                            >
+                                注册
+                            </button>
+                        </>
+                    )}
+
+                    <div style={{ marginTop: 20, fontSize: 13, textAlign: 'center' }}>
+                        {isRegistering ? (
+                            <span className="link-text" onClick={() => setIsRegistering(false)} style={{ cursor: 'pointer', color: 'var(--primary-color)' }}>
+                                返回登录
+                            </span>
+                        ) : (
+                            <span className="link-text" onClick={() => setIsRegistering(true)} style={{ cursor: 'pointer', color: 'var(--primary-color)' }}>
+                                注册新账号
+                            </span>
+                        )}
+                    </div>
 
                     <div style={{ marginTop: 20, fontSize: 12, color: 'var(--text-muted)', textAlign: 'center' }}>
                         可用账号：阿桃 / 阿允 / 铃酱 / 阿秋

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
 interface BulkOrder {
     id: string;
@@ -13,53 +13,38 @@ interface BulkOrder {
 }
 
 const BulkOrderPage: React.FC = () => {
-    const [orders, setOrders] = useState<BulkOrder[]>([
-        {
-            id: '1',
-            shop_name: '示例官方旗舰店',
-            sub_type: '申请样衣',
-            skc_codes: ['SKC-001', 'SKC-002'],
-            submit_time: '2024-05-20 10:30',
-            status: '待处理',
-            remark: '需要2件样衣用于拍摄'
-        },
-        {
-            id: '2',
-            shop_name: '名品潮流馆',
-            sub_type: '样衣来回',
-            skc_codes: ['SKC-003'],
-            submit_time: '2024-05-21 14:00',
-            status: '进行中',
-            tracking_no: 'SF1234567890'
-        },
-        {
-            id: '3',
-            shop_name: '赫本工作室',
-            sub_type: '付款确认',
-            skc_codes: ['SKC-004'],
-            submit_time: '2024-05-22 09:15',
-            status: '待处理',
-            amount: 5680
-        },
-        {
-            id: '4',
-            shop_name: '意式精品馆',
-            sub_type: '尾款结算',
-            skc_codes: ['SKC-005', 'SKC-006'],
-            submit_time: '2024-05-23 11:00',
-            status: '已完成',
-            amount: 12800
-        },
-        {
-            id: '5',
-            shop_name: '新店测试',
-            sub_type: '物流跟踪',
-            skc_codes: ['SKC-007'],
-            submit_time: '2024-05-24 16:30',
-            status: '进行中',
-            tracking_no: 'YT9876543210'
-        },
-    ]);
+    const [orders, setOrders] = useState<BulkOrder[]>([]);
+
+    useEffect(() => {
+        const fetchOrders = async () => {
+            try {
+                const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+                const res = await fetch(`${API_BASE}/api/admin/restock?pageSize=100`);
+                if (!res.ok) throw new Error('Failed to fetch bulk orders');
+                const data = await res.json();
+
+                const mappedOrders: BulkOrder[] = (data.data || []).map((item: any) => ({
+                    id: item.id,
+                    shop_name: item.shop_name || '未知店铺',
+                    // 如果 DB 无 sub_type，默认为 '尾款结算' 或根据其他字段判断
+                    sub_type: item.sub_type || '尾款结算',
+                    skc_codes: item.skc_code ? [item.skc_code] : [], // Restock order often has 1 skc?
+                    submit_time: item.created_at ? new Date(item.created_at).toLocaleString() : '',
+                    status: item.status === 'pending' ? '待处理' :
+                        item.status === 'processing' ? '进行中' :
+                            item.status === 'completed' ? '已完成' : '待处理',
+                    amount: item.amount || item.actual_quantity * 100, // Mock amount calculation if missing
+                    tracking_no: item.tracking_no,
+                    remark: item.remark
+                }));
+                setOrders(mappedOrders);
+            } catch (error) {
+                console.error('Error fetching bulk orders:', error);
+            }
+        };
+
+        fetchOrders();
+    }, []);
 
     const [filter, setFilter] = useState<'all' | '申请样衣' | '样衣来回' | '付款确认' | '尾款结算' | '物流跟踪'>('all');
     const [detailModal, setDetailModal] = useState<{ show: boolean; order: BulkOrder | null }>({ show: false, order: null });

@@ -1,10 +1,12 @@
 import { api } from '../lib/api';
 import { RestockOrder, RestockLogistics } from '../lib/supabase';
+import { PaginatedResponse } from '../types';
 
 // 获取补货订单列表
 export async function getRestockOrders(): Promise<RestockOrder[]> {
     try {
-        return await api.get<RestockOrder[]>('/api/restock');
+        const res = await api.get<PaginatedResponse<RestockOrder>>('/api/restock');
+        return res.data || [];
     } catch (error) {
         console.error('Error fetching restock orders:', error);
         return [];

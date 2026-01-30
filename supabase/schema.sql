@@ -7,6 +7,22 @@ CREATE TABLE IF NOT EXISTS sys_shop (
   shop_name VARCHAR(100) NOT NULL,
   phone VARCHAR(20),
   role VARCHAR(20) DEFAULT 'FACTORY', -- FACTORY(商家), BUYER(买手), MERCHANDISER(跟单员)
+  level VARCHAR(5) DEFAULT 'N', -- S/A/B/C/N 店铺等级
+  key_id VARCHAR(100), -- 商家KEY
+  shop_code VARCHAR(100), -- 店铺原始ID
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ================== 1.5 用户账号表 (用于商家注册/登录) ==================
+CREATE TABLE IF NOT EXISTS sys_user (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  username VARCHAR(50) NOT NULL UNIQUE,
+  password VARCHAR(255) NOT NULL, -- 实际生产应使用加密哈希
+  role VARCHAR(20) DEFAULT 'merchant', -- merchant(商家), admin(管理员)
+  shop_name VARCHAR(100), -- 关联店铺名称（用于审核）
+  status VARCHAR(20) DEFAULT 'pending', -- pending(待审批), approved(已通过), rejected(已驳回)
+  reject_reason VARCHAR(255), -- 驳回原因
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -17,12 +33,13 @@ CREATE TABLE IF NOT EXISTS b_style_demand (
   push_type VARCHAR(10) DEFAULT 'ASSIGN', -- ASSIGN(指定推送), POOL(公海抢单)
   shop_id UUID REFERENCES sys_shop(id),
   shop_name VARCHAR(100),
-  image_url VARCHAR(500),
+  image_url TEXT, -- Base64 可能很长，使用 TEXT
   ref_link VARCHAR(500),
   name VARCHAR(200),
   remark TEXT,
   timestamp_label VARCHAR(50), -- 时间标签如"2小时前转入"
   status VARCHAR(20) DEFAULT 'new', -- locked, new, completed, abandoned, developing
+  tags TEXT[], -- 标签数组
   days_left INT,
   development_status VARCHAR(20) DEFAULT 'drafting', -- drafting, helping, ok, success
   confirm_time TIMESTAMPTZ,
@@ -37,7 +54,7 @@ CREATE TABLE IF NOT EXISTS b_style_demand (
 CREATE TABLE IF NOT EXISTS b_public_style (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name VARCHAR(200),
-  image_url VARCHAR(500),
+  image_url TEXT, -- Base64 可能很长，使用 TEXT
   intent_count INT DEFAULT 0,
   max_intents INT DEFAULT 2,
   tags TEXT[], -- 标签数组
@@ -115,6 +132,7 @@ CREATE TABLE IF NOT EXISTS b_restock_logistics (
 -- ================== 8. 启用 RLS (Row Level Security) ==================
 -- 为简化演示，暂时允许匿名访问所有数据
 ALTER TABLE sys_shop ENABLE ROW LEVEL SECURITY;
+ALTER TABLE sys_user ENABLE ROW LEVEL SECURITY;
 ALTER TABLE b_style_demand ENABLE ROW LEVEL SECURITY;
 ALTER TABLE b_public_style ENABLE ROW LEVEL SECURITY;
 ALTER TABLE b_request_record ENABLE ROW LEVEL SECURITY;
@@ -124,6 +142,7 @@ ALTER TABLE b_restock_logistics ENABLE ROW LEVEL SECURITY;
 
 -- 创建允许匿名访问的策略
 CREATE POLICY "Allow anonymous access" ON sys_shop FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow anonymous access" ON sys_user FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow anonymous access" ON b_style_demand FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow anonymous access" ON b_public_style FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow anonymous access" ON b_request_record FOR ALL USING (true) WITH CHECK (true);
@@ -131,47 +150,6 @@ CREATE POLICY "Allow anonymous access" ON b_quote_order FOR ALL USING (true) WIT
 CREATE POLICY "Allow anonymous access" ON b_restock_order FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow anonymous access" ON b_restock_logistics FOR ALL USING (true) WITH CHECK (true);
 
--- ================== 9. 插入初始示例数据 ==================
+-- ================== 9. 注意事项 ==================
+-- 示例数据已移除，所有数据应来自用户自助上传或买手推送
 
--- 插入示例商家
-INSERT INTO sys_shop (id, shop_name, phone, role) VALUES
-  ('11111111-1111-1111-1111-111111111111', '[示例官方旗舰店]', '13800138000', 'FACTORY'),
-  ('22222222-2222-2222-2222-222222222222', '[名品潮流馆]', '13900139000', 'FACTORY'),
-  ('33333333-3333-3333-3333-333333333333', '赫本工作室', '13700137000', 'FACTORY'),
-  ('44444444-4444-4444-4444-444444444444', '意式精品馆', '13600136000', 'FACTORY');
-
--- 插入私推款式
-INSERT INTO b_style_demand (shop_id, shop_name, name, image_url, remark, timestamp_label, status, days_left) VALUES
-  ('11111111-1111-1111-1111-111111111111', '[示例官方旗舰店]', '法式优雅碎花连衣长裙', 
-   'https://images.unsplash.com/photo-1572804013307-a9a11198427e?auto=format&fit=crop&q=80&w=400',
-   '建议面料：雪纺、丝绸；适合早秋休闲与职场通勤场景。', '2小时前转入', 'locked', 2),
-  ('22222222-2222-2222-2222-222222222222', '[名品潮流馆]', '极简廓形真丝衬衫',
-   'https://images.unsplash.com/photo-1596755094514-f87e34085b2c?auto=format&fit=crop&q=80&w=400',
-   '高端支线款式，关注真丝缩水率控制。', '昨天 15:30 推送', 'new', NULL);
-
--- 插入开发中款式
-INSERT INTO b_style_demand (shop_id, shop_name, name, image_url, remark, timestamp_label, status, development_status) VALUES
-  ('33333333-3333-3333-3333-333333333333', '赫本工作室', '复古赫本风赫本风方领大摆裙',
-   'https://images.unsplash.com/photo-1581044777550-4cfa60707c03?auto=format&fit=crop&q=80&w=400',
-   '领口深度需微调，裙摆增加20cm垂度感。', '2024-05-22', 'developing', 'drafting'),
-  ('44444444-4444-4444-4444-444444444444', '意式精品馆', '意式重工刺绣羊毛大衣',
-   'https://images.unsplash.com/photo-1539533377285-b827dd19028a?auto=format&fit=crop&q=80&w=400',
-   '关注袖口刺绣密度，面料克重需在800g以上。', '2024-05-21', 'developing', 'helping');
-
--- 插入公池款式
-INSERT INTO b_public_style (name, image_url, intent_count, max_intents, tags) VALUES
-  ('高腰直筒牛仔裤', 'https://picsum.photos/seed/denim/400', 1, 2, ARRAY['丹宁']),
-  ('羊毛开衫', 'https://picsum.photos/seed/wool/400', 0, 2, ARRAY['毛织']);
-
--- 插入示例申请记录
-INSERT INTO b_request_record (type, sub_type, target_codes, status, pricing_details, shop_name) VALUES
-  ('pricing', '毛织类核价', ARRAY['SKC-991', 'SKC-992'], 'processing', 
-   '[{"skc":"SKC-991","appliedPrice":59,"buyerPrice":59,"status":"成功","time":"2024-05-21"},{"skc":"SKC-992","appliedPrice":50,"buyerPrice":45,"status":"失败","time":"2024-05-21"}]'::jsonb,
-   '测试商家'),
-  ('anomaly', '修改尺码', ARRAY['SPU-ABC'], 'completed', NULL, '测试商家'),
-  ('anomaly', '申请下架', ARRAY['SKC-X1'], 'completed', NULL, '测试商家');
-
--- 插入示例补货订单
-INSERT INTO b_restock_order (skc_code, name, image_url, plan_quantity, actual_quantity, status, expiry_date) VALUES
-  ('SKC2023001', '碎花连衣裙 - 复古蓝', 'https://picsum.photos/seed/p1/200', 1000, 900, '待商家接单', '2024-11-20'),
-  ('SKC2023005', '羊毛针织衫 - 燕麦色', 'https://picsum.photos/seed/p2/200', 500, 500, '生产中', '2024-11-25');

@@ -1,12 +1,13 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { StyleItem } from '../types';
-import { getPrivateStyles, getPublicStyles, confirmStyle, createAndConfirmPublicStyle, expressIntent, abandonStyle } from '../services/styleService';
+import { getPrivateStyles, getPublicStyles, confirmStyle, createAndConfirmPublicStyle, expressIntent, abandonStyle, getQuotaStats } from '../services/styleService';
 import { StyleDemand, PublicStyle } from '../lib/supabase';
 
 interface Props {
   availableStyles: StyleItem[];
   onConfirmStyle: (style: StyleItem) => void;
+  shopId?: string;
 }
 
 // 转换数据库格式到前端格式
@@ -34,10 +35,11 @@ function getDaysFromCreate(createdAt: string): number {
   return Math.floor((now.getTime() - created.getTime()) / (1000 * 60 * 60 * 24));
 }
 
-const StyleWorkbench: React.FC<Props> = ({ availableStyles: propStyles, onConfirmStyle }) => {
+const StyleWorkbench: React.FC<Props> = ({ availableStyles: propStyles, onConfirmStyle, shopId }) => {
   const [loading, setLoading] = useState(true);
   const [privateStyles, setPrivateStyles] = useState<StyleItem[]>([]);
   const [publicStyles, setPublicStyles] = useState<PublicStyle[]>([]);
+  const [quota, setQuota] = useState<{ current: number; limit: number }>({ current: 0, limit: 5 });
 
   // 弹窗状态
   const [linkPopup, setLinkPopup] = useState<{ open: boolean; link: string }>({ open: false, link: '' });
@@ -55,11 +57,16 @@ const StyleWorkbench: React.FC<Props> = ({ availableStyles: propStyles, onConfir
       setLoading(true);
       try {
         const [privateData, publicData] = await Promise.all([
-          getPrivateStyles(),
+          getPrivateStyles(shopId),
           getPublicStyles()
         ]);
         setPrivateStyles(privateData.map(toStyleItem));
         setPublicStyles(publicData);
+
+        if (shopId) {
+          const stats = await getQuotaStats(shopId);
+          if (stats) setQuota(stats);
+        }
       } catch (err) {
         console.error('Error loading styles:', err);
         setPrivateStyles(propStyles);
@@ -68,7 +75,7 @@ const StyleWorkbench: React.FC<Props> = ({ availableStyles: propStyles, onConfir
       }
     }
     loadData();
-  }, []);
+  }, [shopId]);
 
   // 公池过滤 + 排序：排除 2/2，优先 1/2，其次老款(10天+)，其他
   const sortedPublicStyles = useMemo(() => {
@@ -148,7 +155,7 @@ const StyleWorkbench: React.FC<Props> = ({ availableStyles: propStyles, onConfir
         </div>
         <div className="flex gap-3">
           <div className="flex items-center px-3 py-1 bg-amber-50 border border-amber-200 rounded text-amber-700 text-xs font-medium">
-            当前意向名额：<span className="font-bold mx-1 text-sm">4/5</span>
+            当前意向名额：<span className="font-bold mx-1 text-sm">{quota.current}/{quota.limit}</span>
           </div>
         </div>
       </div>

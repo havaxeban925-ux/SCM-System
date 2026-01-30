@@ -14,14 +14,40 @@ router.get('/private', async (req, res) => {
         .from('b_style_demand')
         .select('*', { count: 'exact' })
         .in('status', ['locked', 'new'])
-        .order('created_at', { ascending: false })
-        .range(offset, offset + pageSize - 1);
+        .order('created_at', { ascending: false });
 
-    if (shopId) query = query.eq('shop_id', shopId);
+    // 如果传入了 shopId，则仅显示该商铺的私推；
+    // 如果没有传且角色不是管理员，可能需要通过中间件处理，但这里我们先支持前端传参。
+    if (shopId) {
+        query = query.eq('shop_id', shopId);
+    }
 
-    const { data, error, count } = await query;
+    const { data, error, count } = await query.range(offset, offset + pageSize - 1);
     if (error) return res.status(500).json({ error: error.message });
     res.json({ data: data || [], total: count || 0, page, pageSize });
+});
+
+// GET /api/styles/quota-stats - 获取当前商铺的名额统计
+router.get('/quota-stats', async (req, res) => {
+    const { shopId } = req.query;
+
+    if (!shopId) {
+        return res.status(400).json({ error: 'shopId is required' });
+    }
+
+    // 统计逻辑：在 b_style_demand 中 status 为 locked 或 developing 的款式
+    const { count, error } = await supabase
+        .from('b_style_demand')
+        .select('*', { count: 'exact', head: true })
+        .eq('shop_id', shopId)
+        .in('status', ['locked', 'developing']);
+
+    if (error) return res.status(500).json({ error: error.message });
+
+    res.json({
+        current: count || 0,
+        limit: 5 // 目前硬编码为 5，后续可扩展为从配置或商家等级获取
+    });
 });
 
 // GET /api/styles/public - 获取公池款式（支持分页）

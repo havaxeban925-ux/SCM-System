@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
 interface AnomalyOrder {
     id: string;
@@ -12,58 +12,42 @@ interface AnomalyOrder {
 }
 
 const AnomalyOrderPage: React.FC = () => {
-    const [orders, setOrders] = useState<AnomalyOrder[]>([
-        {
-            id: '1',
-            shop_name: '示例官方旗舰店',
-            sub_type: '新增尺码',
-            category: '尺码问题',
-            target_codes: ['SKC-001'],
-            submit_time: '2024-05-20 10:30',
-            status: '待处理',
-            content: '需要新增XL尺码'
-        },
-        {
-            id: '2',
-            shop_name: '名品潮流馆',
-            sub_type: '修改尺码',
-            category: '尺码问题',
-            target_codes: ['SKC-002', 'SKC-003'],
-            submit_time: '2024-05-21 14:00',
-            status: '待处理',
-            content: 'M码尺寸偏小，需要调整'
-        },
-        {
-            id: '3',
-            shop_name: '赫本工作室',
-            sub_type: '人台误判',
-            category: '图片异常',
-            target_codes: ['SPU-001'],
-            submit_time: '2024-05-22 09:15',
-            status: '已处理',
-            content: '图片识别错误，非人模图'
-        },
-        {
-            id: '4',
-            shop_name: '意式精品馆',
-            sub_type: '换图误判',
-            category: '图片异常',
-            target_codes: ['SPU-002'],
-            submit_time: '2024-05-23 11:00',
-            status: '已驳回',
-            content: '换图后被误判为不合规'
-        },
-        {
-            id: '5',
-            shop_name: '新店测试',
-            sub_type: '申请下架',
-            category: '其他',
-            target_codes: ['SKC-010', 'SKC-011'],
-            submit_time: '2024-05-24 16:30',
-            status: '待处理',
-            content: '商品缺货，申请临时下架'
-        },
-    ]);
+    const [orders, setOrders] = useState<AnomalyOrder[]>([]);
+
+    const deriveCategory = (subType: string) => {
+        if (subType?.includes('尺码')) return '尺码问题';
+        if (subType?.includes('误判') || subType?.includes('图')) return '图片异常';
+        return '其他';
+    };
+
+    useEffect(() => {
+        const fetchOrders = async () => {
+            try {
+                const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+                const res = await fetch(`${API_BASE}/api/requests?type=anomaly&pageSize=100`);
+                if (!res.ok) throw new Error('Failed to fetch anomaly orders');
+                const data = await res.json();
+
+                const mappedOrders: AnomalyOrder[] = (data.data || []).map((item: any) => ({
+                    id: item.id,
+                    shop_name: item.shop_name || '未知店铺',
+                    sub_type: item.sub_type,
+                    category: deriveCategory(item.sub_type),
+                    target_codes: item.target_codes || [],
+                    submit_time: item.submit_time ? new Date(item.submit_time).toLocaleString() : '',
+                    status: item.status === 'processing' ? '待处理' :
+                        item.status === 'completed' || item.status === 'approved' ? '已处理' :
+                            item.status === 'rejected' ? '已驳回' : '待处理',
+                    content: item.remark
+                }));
+                setOrders(mappedOrders);
+            } catch (error) {
+                console.error('Error fetching anomaly orders:', error);
+            }
+        };
+
+        fetchOrders();
+    }, []);
 
     const [filter, setFilter] = useState<'all' | '尺码问题' | '图片异常' | '其他'>('all');
     const [statusFilter, setStatusFilter] = useState<'all' | '待处理' | '已处理' | '已驳回'>('all');

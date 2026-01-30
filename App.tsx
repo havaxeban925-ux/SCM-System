@@ -2,11 +2,13 @@
 import React, { useState } from 'react';
 import { AppView, StyleItem } from './types';
 import StyleWorkbench from './pages/StyleWorkbench';
+import { getQuotaStats } from './services/styleService';
 import RequestWorkbench from './pages/RequestWorkbench';
 import ReplenishmentSynergy from './pages/ReplenishmentSynergy';
 import DevelopmentProgress from './pages/DevelopmentProgress';
 import QuotationDrawer from './components/QuotationDrawer';
 import { PRIVATE_STYLES, MOCK_DEVELOPMENT_STYLES } from './constants';
+import ErrorBoundary from './components/ErrorBoundary';
 
 // 模拟消息
 const MOCK_MESSAGES = [
@@ -16,7 +18,7 @@ const MOCK_MESSAGES = [
 ];
 
 // 登录视图组件（支持登录和注册）
-const LoginView: React.FC<{ onLogin: () => void }> = ({ onLogin }) => {
+const LoginView: React.FC<{ onLogin: (user: any) => void }> = ({ onLogin }) => {
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -24,35 +26,71 @@ const LoginView: React.FC<{ onLogin: () => void }> = ({ onLogin }) => {
   const [registerStatus, setRegisterStatus] = useState<'idle' | 'pending' | 'rejected'>('idle');
   const [rejectReason, setRejectReason] = useState('');
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (username && password) {
-      // 模拟检查注册状态
-      if (registerStatus === 'pending') {
-        alert('您的账号正在审核中，请耐心等待...');
-        return;
-      }
-      if (registerStatus === 'rejected') {
-        alert(`注册被驳回：${rejectReason}`);
-        setMode('register');
-        return;
-      }
-      onLogin();
-    } else {
+    if (!username || !password) {
       alert('请输入用户名和密码');
+      return;
+    }
+
+    try {
+      const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+      const res = await fetch(`${API_BASE}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password })
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        alert(data.error || '登录失败');
+        return;
+      }
+
+      // 登录成功
+      alert(`欢迎回来，${data.user.shop_name || data.user.username}`);
+      onLogin(data.user);
+
+    } catch (err) {
+      alert('请求失败，请检查网络或后端服务');
+      console.error(err);
     }
   };
 
-  const handleRegister = (e: React.FormEvent) => {
+  const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!username || !password || !shopName) {
       alert('请填写完整信息');
       return;
     }
-    // 模拟提交注册申请到"新增商家"审批工单
-    setRegisterStatus('pending');
-    alert('注册申请已提交，请等待买手审核。\n\n审核通过后您将收到通知。');
-    setMode('login');
+
+    try {
+      const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+      const res = await fetch(`${API_BASE}/api/auth/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username,
+          password,
+          shop_name: shopName
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        alert(`注册失败：${data.error || '未知错误'}`);
+        return;
+      }
+
+      // 注册成功
+      setRegisterStatus('pending');
+      alert('注册申请已提交，请等待买手审核。\n\n审核通过后您将收到通知。');
+      setMode('login');
+    } catch (err) {
+      alert('请求失败，请检查后端服务是否启动');
+      console.error('Register error:', err);
+    }
   };
 
   return (
@@ -73,8 +111,8 @@ const LoginView: React.FC<{ onLogin: () => void }> = ({ onLogin }) => {
               type="button"
               onClick={() => setMode('login')}
               className={`flex-1 pb-3 text-sm font-bold transition-colors ${mode === 'login'
-                  ? 'text-primary border-b-2 border-primary'
-                  : 'text-slate-400 hover:text-slate-600'
+                ? 'text-primary border-b-2 border-primary'
+                : 'text-slate-400 hover:text-slate-600'
                 }`}
             >
               登录
@@ -83,8 +121,8 @@ const LoginView: React.FC<{ onLogin: () => void }> = ({ onLogin }) => {
               type="button"
               onClick={() => setMode('register')}
               className={`flex-1 pb-3 text-sm font-bold transition-colors ${mode === 'register'
-                  ? 'text-primary border-b-2 border-primary'
-                  : 'text-slate-400 hover:text-slate-600'
+                ? 'text-primary border-b-2 border-primary'
+                : 'text-slate-400 hover:text-slate-600'
                 }`}
             >
               注册
@@ -184,8 +222,19 @@ const LoginView: React.FC<{ onLogin: () => void }> = ({ onLogin }) => {
   );
 };
 
+interface Shop {
+  id: string;
+  shop_name: string;
+  level: string;
+  key_id: string;
+  shop_code?: string;
+}
+
 const App: React.FC = () => {
-  const [isLoggedIn, setIsLoggedIn] = useState(true); // 默认已登录（开发模式）
+  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [myShops, setMyShops] = useState<Shop[]>([]);
+  const [currentShopId, setCurrentShopId] = useState<string | undefined>(undefined);
+
   const [currentView, setCurrentView] = useState<AppView>(AppView.STYLE_WORKBENCH);
   const [showQuotationDrawer, setShowQuotationDrawer] = useState(false);
 
@@ -198,15 +247,31 @@ const App: React.FC = () => {
 
   // 店铺信息管理 Modal 状态
   const [showShopModal, setShowShopModal] = useState(false);
-  const [shopInfo, setShopInfo] = useState({
-    shopId: 'SHOP-001',
-    shopName: '小铃子专营店',
-    contact: '张经理',
-    phone: '138****8888',
-  });
 
   const [stylesInDevelopment, setStylesInDevelopment] = useState<StyleItem[]>(MOCK_DEVELOPMENT_STYLES);
   const [availableStyles, setAvailableStyles] = useState<StyleItem[]>(PRIVATE_STYLES);
+
+  const handleLoginSuccess = async (user: any) => {
+    setCurrentUser(user);
+    // Fetch associated shops based on user.shop_name or username
+    // Here we assume mapping by shop_name for simplicity as per user intent
+    if (user.shop_name) {
+      try {
+        const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+        const res = await fetch(`${API_BASE}/api/admin/shops?search=${encodeURIComponent(user.shop_name)}`);
+        if (res.ok) {
+          const json = await res.json();
+          const shops = json.data || [];
+          setMyShops(shops);
+          if (shops.length > 0) {
+            setCurrentShopId(shops[0].id);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to fetch user shops', err);
+      }
+    }
+  };
 
   const handleConfirmStyle = (style: StyleItem) => {
     setAvailableStyles(prev => prev.filter(s => s.id !== style.id));
@@ -235,8 +300,9 @@ const App: React.FC = () => {
   };
 
   const handleLogout = () => {
-    setIsLoggedIn(false);
+    setCurrentUser(null);
     setShowUserMenu(false);
+    setMyShops([]);
   };
 
   const unreadCount = messages.filter(m => !m.read).length;
@@ -246,8 +312,8 @@ const App: React.FC = () => {
   };
 
   // 如果未登录，显示登录页
-  if (!isLoggedIn) {
-    return <LoginView onLogin={() => setIsLoggedIn(true)} />;
+  if (!currentUser) {
+    return <LoginView onLogin={handleLoginSuccess} />;
   }
 
   const Header: React.FC = () => (
@@ -351,16 +417,19 @@ const App: React.FC = () => {
                 onClick={() => { setShowUserMenu(!showUserMenu); setShowNotifications(false); }}
                 className="flex items-center gap-2 cursor-pointer hover:bg-white/10 px-3 py-1.5 rounded transition-colors group"
               >
+                <div className="flex flex-col items-end">
+                  <span className="text-sm text-white font-bold">{currentUser.shop_name}</span>
+                  <span className="text-[10px] text-slate-400">{currentUser.username}</span>
+                </div>
                 <span className="material-symbols-outlined text-slate-400 group-hover:text-white text-xl">account_circle</span>
-                <span className="text-xs text-white/80 font-medium">{shopInfo.contact}</span>
                 <span className="material-symbols-outlined text-slate-400 text-sm">expand_more</span>
               </div>
               {/* 用户菜单 Popover */}
               {showUserMenu && (
-                <div className="absolute right-0 top-full mt-2 w-56 bg-white rounded-xl shadow-2xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+                <div className="absolute right-0 top-full mt-2 w-64 bg-white rounded-xl shadow-2xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
                   <div className="px-4 py-3 bg-slate-50 border-b border-slate-200">
-                    <p className="font-bold text-sm text-navy-700">{shopInfo.contact}</p>
-                    <p className="text-xs text-slate-500">{shopInfo.shopName}</p>
+                    <p className="font-bold text-sm text-navy-700">{currentUser.shop_name}</p>
+                    <p className="text-xs text-slate-500">{currentUser.username}</p>
                   </div>
                   <div className="py-1">
                     <button
@@ -393,25 +462,28 @@ const App: React.FC = () => {
         <Header />
       </div>
       <main className="flex-1 max-w-[1440px] w-full mx-auto px-6 lg:px-12 py-8">
-        <div style={{ display: currentView === AppView.STYLE_WORKBENCH ? 'block' : 'none' }}>
-          <StyleWorkbench
-            availableStyles={availableStyles}
-            onConfirmStyle={handleConfirmStyle}
-          />
-        </div>
-        <div style={{ display: currentView === AppView.DEVELOPMENT_PROGRESS ? 'block' : 'none' }}>
-          <DevelopmentProgress
-            styles={stylesInDevelopment}
-            onAbandon={handleAbandonDevelopment}
-            onUpdateStatus={handleUpdateDevStatus}
-          />
-        </div>
-        <div style={{ display: currentView === AppView.REQUEST_WORKBENCH ? 'block' : 'none' }}>
-          <RequestWorkbench onNewRequest={() => setShowQuotationDrawer(true)} />
-        </div>
-        <div style={{ display: currentView === AppView.REPLENISHMENT ? 'block' : 'none' }}>
-          <ReplenishmentSynergy />
-        </div>
+        <ErrorBoundary name="MainView">
+          <div style={{ display: currentView === AppView.STYLE_WORKBENCH ? 'block' : 'none' }}>
+            <StyleWorkbench
+              availableStyles={availableStyles}
+              onConfirmStyle={handleConfirmStyle}
+              shopId={currentShopId}
+            />
+          </div>
+          <div style={{ display: currentView === AppView.DEVELOPMENT_PROGRESS ? 'block' : 'none' }}>
+            <DevelopmentProgress
+              styles={stylesInDevelopment}
+              onAbandon={handleAbandonDevelopment}
+              onUpdateStatus={handleUpdateDevStatus}
+            />
+          </div>
+          <div style={{ display: currentView === AppView.REQUEST_WORKBENCH ? 'block' : 'none' }}>
+            <RequestWorkbench onNewRequest={() => setShowQuotationDrawer(true)} />
+          </div>
+          <div style={{ display: currentView === AppView.REPLENISHMENT ? 'block' : 'none' }}>
+            <ReplenishmentSynergy />
+          </div>
+        </ErrorBoundary>
       </main>
       <footer className="mt-auto border-t border-slate-200 bg-white px-6 lg:px-12 py-6">
         <div className="max-w-[1440px] mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
@@ -428,52 +500,58 @@ const App: React.FC = () => {
       {showShopModal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
           <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowShopModal(false)}></div>
-          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95">
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in-95">
             <div className="px-6 py-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
               <h3 className="font-bold text-lg text-navy-700">店铺信息管理</h3>
               <button onClick={() => setShowShopModal(false)} className="material-symbols-outlined text-slate-400 hover:text-slate-600">close</button>
             </div>
-            <div className="p-6 space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-500 mb-2">店铺ID</label>
-                <input
-                  type="text"
-                  className="w-full h-10 px-3 border border-slate-200 rounded-lg text-sm bg-slate-50"
-                  value={shopInfo.shopId}
-                  disabled
-                />
+            <div className="p-6 space-y-6">
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 mb-2">商家昵称</label>
+                  <div className="h-10 px-3 bg-slate-50 border border-slate-200 rounded-lg flex items-center text-sm font-medium">
+                    {currentUser.shop_name || '未设置'}
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 mb-2">联系方式</label>
+                  <div className="h-10 px-3 bg-slate-50 border border-slate-200 rounded-lg flex items-center text-sm font-medium">
+                    {currentUser.username}
+                  </div>
+                </div>
               </div>
+
               <div>
-                <label className="block text-xs font-bold text-slate-500 mb-2">店铺名称</label>
-                <input
-                  type="text"
-                  className="w-full h-10 px-3 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
-                  value={shopInfo.shopName}
-                  onChange={e => setShopInfo({ ...shopInfo, shopName: e.target.value })}
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-500 mb-2">联系人</label>
-                <input
-                  type="text"
-                  className="w-full h-10 px-3 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
-                  value={shopInfo.contact}
-                  onChange={e => setShopInfo({ ...shopInfo, contact: e.target.value })}
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-500 mb-2">联系电话</label>
-                <input
-                  type="text"
-                  className="w-full h-10 px-3 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
-                  value={shopInfo.phone}
-                  onChange={e => setShopInfo({ ...shopInfo, phone: e.target.value })}
-                />
+                <label className="block text-xs font-bold text-slate-500 mb-2">店铺列表</label>
+                {myShops.length > 0 ? (
+                  <div className="border border-slate-200 rounded-lg overflow-hidden">
+                    <table className="w-full text-sm">
+                      <thead className="bg-slate-50 border-b border-slate-200">
+                        <tr>
+                          <th className="px-3 py-2 text-left text-slate-500 font-bold">店铺ID</th>
+                          <th className="px-3 py-2 text-left text-slate-500 font-bold">店铺名称</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {myShops.map((shop, idx) => (
+                          <tr key={idx} className="border-b border-slate-100 last:border-0 hover:bg-slate-50">
+                            <td className="px-3 py-2 font-mono text-slate-600">{shop.shop_code || shop.id.slice(0, 8)}</td>
+                            <td className="px-3 py-2 font-medium text-navy-700">{shop.shop_name}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="p-4 bg-slate-50 rounded-lg border border-dashed border-slate-300 text-center text-slate-500 text-sm">
+                    暂无店铺信息，请联系管理员关联店铺
+                  </div>
+                )}
               </div>
             </div>
             <div className="px-6 py-4 border-t border-slate-200 bg-slate-50 flex justify-end gap-3">
-              <button onClick={() => setShowShopModal(false)} className="px-5 py-2 border border-slate-300 rounded-lg text-sm font-bold text-slate-600 hover:bg-slate-100">取消</button>
-              <button onClick={() => { setShowShopModal(false); alert('保存成功'); }} className="px-5 py-2 bg-primary text-white rounded-lg text-sm font-bold hover:bg-blue-600">保存</button>
+              <button onClick={() => setShowShopModal(false)} className="px-5 py-2 bg-primary text-white rounded-lg text-sm font-bold hover:bg-blue-600">关闭</button>
             </div>
           </div>
         </div>

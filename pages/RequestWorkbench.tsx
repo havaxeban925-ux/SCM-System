@@ -39,6 +39,7 @@ const RequestWorkbench: React.FC<Props> = ({ onNewRequest }) => {
   const [secondPrices, setSecondPrices] = useState<Record<string, string>>({});
   const [secondReasons, setSecondReasons] = useState<Record<string, string>>({});
   const [submittedSKCs, setSubmittedSKCs] = useState<Set<string>>(new Set());
+  const [processingSKCs, setProcessingSKCs] = useState<Set<string>>(new Set()); // 正在处理中的 SKC
 
   // 搜索状态
   const [searchModule, setSearchModule] = useState('');
@@ -83,12 +84,32 @@ const RequestWorkbench: React.FC<Props> = ({ onNewRequest }) => {
       alert('请填写二次申请价格和理由');
       return;
     }
-    const success = await submitSecondaryReview(recordId, skc, price, reason);
-    if (success) {
-      setSubmittedSKCs(prev => new Set(prev).add(skc));
-      // 刷新数据
-      const data = await getRequestRecords();
-      setRecords(data.map(toRequestRecord));
+
+    setProcessingSKCs(prev => new Set(prev).add(skc));
+    try {
+      const success = await submitSecondaryReview(recordId, skc, price, reason);
+      if (success) {
+        setSubmittedSKCs(prev => new Set(prev).add(skc));
+        // 局部更新：不再重新拉取 getRequestRecords()，直接修改本地 records 状态
+        setRecords(prev => prev.map(rec => {
+          if (rec.id !== recordId) return rec;
+          return {
+            ...rec,
+            pricingDetails: rec.pricingDetails?.map(d =>
+              d.skc === skc ? { ...d, status: '复核中' as const, secondPrice: price, secondReason: reason } : d
+            )
+          };
+        }));
+      }
+    } catch (err) {
+      console.error('Submit failed:', err);
+      alert('提交失败，请重试');
+    } finally {
+      setProcessingSKCs(prev => {
+        const next = new Set(prev);
+        next.delete(skc);
+        return next;
+      });
     }
   };
 
@@ -391,9 +412,12 @@ const RequestWorkbench: React.FC<Props> = ({ onNewRequest }) => {
                               ) : (
                                 <button
                                   onClick={() => handleSecondarySubmit(selectedRequest.id, d.skc)}
-                                  className="bg-navy-700 text-white px-3 py-1 rounded font-bold hover:bg-navy-800"
+                                  disabled={processingSKCs.has(d.skc)}
+                                  className="bg-navy-700 text-white px-3 py-1 rounded font-bold hover:bg-navy-800 disabled:opacity-50 flex items-center gap-1 justify-center min-w-[50px]"
                                 >
-                                  提交
+                                  {processingSKCs.has(d.skc) ? (
+                                    <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                                  ) : '提交'}
                                 </button>
                               )}
                             </td>

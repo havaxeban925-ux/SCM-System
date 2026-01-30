@@ -21,7 +21,7 @@ router.get('/dashboard', async (req, res) => {
         while (true) {
             const { data, error } = await supabase
                 .from('sys_shop')
-                .select('level')
+                .select('level, key_id')
                 .range(page * pageSize, (page + 1) * pageSize - 1);
             if (error) throw error;
             if (!data || data.length === 0) break;
@@ -35,13 +35,14 @@ router.get('/dashboard', async (req, res) => {
             return acc;
         }, { S: 0, A: 0, B: 0, C: 0, N: 0 });
 
-        // 3. KEY Total (有 key_id 的店铺数)
-        const { count: keyTotal, error: keyError } = await supabase
-            .from('sys_shop')
-            .select('*', { count: 'exact', head: true })
-            .not('key_id', 'is', null)
-            .neq('key_id', '');
-        if (keyError) throw keyError;
+        // 3. KEY Total (计算唯一 KEY 数量)
+        // 从已获取的全量店铺数据中提取唯一的 key_id
+        const uniqueKeys = new Set(
+            allShops
+                .map(s => s.key_id)
+                .filter(k => k && k.trim() !== '')
+        );
+        const keyTotal = uniqueKeys.size;
 
         // 4. 各类工单统计
         // 款式工单 (b_style_demand)
@@ -96,7 +97,15 @@ router.get('/dashboard', async (req, res) => {
             .in('status', ['pending', 'processing']);
         if (restockPendingError) throw restockPendingError;
 
-        // 5. 用户总数 (暂时返回固定4人，因为是硬编码的)
+        // 5. SPU总数 (已完成且有SPU编码的款式)
+        const { count: spuTotal, error: spuError } = await supabase
+            .from('b_style_demand')
+            .select('*', { count: 'exact', head: true })
+            .not('back_spu', 'is', null)
+            .neq('back_spu', '');
+        if (spuError) throw spuError;
+
+        // 6. 用户总数 (暂时返回固定4人，因为是硬编码的)
         const userTotal = 4;
 
         res.json({
@@ -104,6 +113,7 @@ router.get('/dashboard', async (req, res) => {
                 key_total: keyTotal || 0,
                 shop_total: shopTotal || 0,
                 user_total: userTotal,
+                spu_total: spuTotal || 0,
                 shop_levels: shopLevels,
                 // 工单统计
                 style_total: styleTotal || 0,
@@ -289,13 +299,13 @@ router.post('/push/private', async (req, res) => {
             name: s.name,
             remark: s.remark,
             tags: s.tags,
-            deadline: s.deadline,
+            days_left: s.deadline || 3,
             status: 'new',
             timestamp_label: '刚刚',
             created_at: new Date().toISOString()
         }));
     } else {
-        const { shopIds, imageUrl, name, remark, tags, deadline } = req.body;
+        const { shopIds, imageUrl, name, remark, deadline } = req.body;
         if (!shopIds || !Array.isArray(shopIds)) {
             return res.status(400).json({ error: 'Invalid payload: shopIds or styles required' });
         }
@@ -306,12 +316,14 @@ router.post('/push/private', async (req, res) => {
             name,
             remark,
             tags,
-            deadline,
+            days_left: deadline || 3,
             status: 'new',
             timestamp_label: '刚刚',
             created_at: new Date().toISOString()
         }));
     }
+
+    console.log('Inserting styles payload:', JSON.stringify(stylesToInsert, null, 2));
 
     const { data, error } = await supabase
         .from('b_style_demand')
@@ -331,7 +343,6 @@ router.post('/push/public', async (req, res) => {
         .insert({
             image_url: imageUrl,
             name,
-            remark,
             tags,
             max_intents: maxIntents || 5,
             intent_count: 0
@@ -471,6 +482,46 @@ router.delete('/demo/cleanup', async (req, res) => {
         res.json({ success: true });
     } catch (err: any) {
         console.error('Cleanup Error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ============ 系统数据清理 ============
+
+// DELETE /api/admin/system/cleanup - 清空所有工单数据（款式、核价、异常、大货、公池）
+router.delete('/system/cleanup', async (req, res) => {
+    try {
+        // 1. 清空款式工单 (b_style_demand)
+        const { error: styleError } = await supabase
+            .from('b_style_demand')
+            .delete()
+            .neq('id', '00000000-0000-0000-0000-000000000000'); // Delete all rows
+        if (styleError) throw styleError;
+
+        // 2. 清空核价/异常工单 (b_request_record)
+        const { error: requestError } = await supabase
+            .from('b_request_record')
+            .delete()
+            .neq('id', '00000000-0000-0000-0000-000000000000');
+        if (requestError) throw requestError;
+
+        // 3. 清空大货工单 (b_restock_order)
+        const { error: restockError } = await supabase
+            .from('b_restock_order')
+            .delete()
+            .neq('id', '00000000-0000-0000-0000-000000000000');
+        if (restockError) throw restockError;
+
+        // 4. 清空公池款式 (b_public_style)
+        const { error: publicError } = await supabase
+            .from('b_public_style')
+            .delete()
+            .neq('id', '00000000-0000-0000-0000-000000000000');
+        if (publicError) throw publicError;
+
+        res.json({ success: true, message: 'All order data cleared' });
+    } catch (err: any) {
+        console.error('System Cleanup Error:', err);
         res.status(500).json({ error: err.message });
     }
 });
