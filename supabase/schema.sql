@@ -64,13 +64,14 @@ CREATE TABLE IF NOT EXISTS b_public_style (
 -- ================== 4. 申请记录表（合并核价+异常） ==================
 CREATE TABLE IF NOT EXISTS b_request_record (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  type VARCHAR(20) NOT NULL, -- pricing(核价类), anomaly(异常类)
+  type VARCHAR(20) NOT NULL, -- pricing(核价类), anomaly(异常类), style(款式类)
   sub_type VARCHAR(50), -- 二级类目：毛织类核价、非毛织类核价、同款同价、申请涨价、尺码问题、申请下架、图片异常
   target_codes TEXT[], -- 关联的SKC/SPU/SKU代码数组
   submit_time TIMESTAMPTZ DEFAULT NOW(),
   status VARCHAR(20) DEFAULT 'processing', -- processing, completed, rejected
   pricing_details JSONB, -- 核价详情JSON
   shop_name VARCHAR(100),
+  remark TEXT, -- 备注信息
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -108,7 +109,7 @@ CREATE TABLE IF NOT EXISTS b_restock_order (
   plan_quantity INT NOT NULL,
   actual_quantity INT,
   arrived_quantity INT DEFAULT 0,
-  status VARCHAR(30) DEFAULT '待商家接单', -- 待商家接单, 待买手复核, 生产中, 待买手确认入仓, 已确认入仓, 已发货
+  status VARCHAR(30) DEFAULT 'pending', -- pending(待商家接单), reviewing(待买手复核), producing(生产中), confirming(待买手确认入仓), confirmed(已确认入仓), shipped(已发货)
   reduction_reason TEXT,
   remark VARCHAR(255),
   expiry_date DATE,
@@ -129,7 +130,16 @@ CREATE TABLE IF NOT EXISTS b_restock_logistics (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- ================== 8. 启用 RLS (Row Level Security) ==================
+-- ================== 8. 标签表 ==================
+CREATE TABLE IF NOT EXISTS b_tag (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name VARCHAR(50) NOT NULL,
+  category VARCHAR(20), -- 'visual'(视觉标签), 'style'(风格标签)
+  sort_order INT DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ================== 9. 启用 RLS (Row Level Security) ==================
 -- 为简化演示，暂时允许匿名访问所有数据
 ALTER TABLE sys_shop ENABLE ROW LEVEL SECURITY;
 ALTER TABLE sys_user ENABLE ROW LEVEL SECURITY;
@@ -139,6 +149,7 @@ ALTER TABLE b_request_record ENABLE ROW LEVEL SECURITY;
 ALTER TABLE b_quote_order ENABLE ROW LEVEL SECURITY;
 ALTER TABLE b_restock_order ENABLE ROW LEVEL SECURITY;
 ALTER TABLE b_restock_logistics ENABLE ROW LEVEL SECURITY;
+ALTER TABLE b_tag ENABLE ROW LEVEL SECURITY;
 
 -- 创建允许匿名访问的策略
 CREATE POLICY "Allow anonymous access" ON sys_shop FOR ALL USING (true) WITH CHECK (true);
@@ -149,7 +160,104 @@ CREATE POLICY "Allow anonymous access" ON b_request_record FOR ALL USING (true) 
 CREATE POLICY "Allow anonymous access" ON b_quote_order FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow anonymous access" ON b_restock_order FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow anonymous access" ON b_restock_logistics FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow anonymous access" ON b_tag FOR ALL USING (true) WITH CHECK (true);
 
--- ================== 9. 注意事项 ==================
+-- ================== 10. 索引优化 ==================
+CREATE INDEX IF NOT EXISTS idx_style_demand_shop_id ON b_style_demand(shop_id);
+CREATE INDEX IF NOT EXISTS idx_style_demand_status ON b_style_demand(status);
+CREATE INDEX IF NOT EXISTS idx_request_record_type_status ON b_request_record(type, status);
+CREATE INDEX IF NOT EXISTS idx_shop_key_id ON sys_shop(key_id);
+CREATE INDEX IF NOT EXISTS idx_restock_order_status ON b_restock_order(status);
+
+-- ================== 11. 注意事项 ==================
 -- 示例数据已移除，所有数据应来自用户自助上传或买手推送
 
+-- ================== 12. 优化字段扩展 (OPT-1, OPT-6, OPT-8) ==================
+
+-- OPT-1: 添加操作人追溯字段
+ALTER TABLE b_style_demand ADD COLUMN IF NOT EXISTS created_by VARCHAR(50);
+ALTER TABLE b_request_record ADD COLUMN IF NOT EXISTS processed_by VARCHAR(50);
+ALTER TABLE b_restock_order ADD COLUMN IF NOT EXISTS created_by VARCHAR(50);
+ALTER TABLE b_public_style ADD COLUMN IF NOT EXISTS created_by VARCHAR(50);
+
+-- OPT-6: 添加用户与店铺的外键关联
+ALTER TABLE sys_user ADD COLUMN IF NOT EXISTS shop_id UUID REFERENCES sys_shop(id);
+CREATE INDEX IF NOT EXISTS idx_user_shop_id ON sys_user(shop_id);
+
+-- OPT-8: 添加紧急标记字段
+ALTER TABLE b_style_demand ADD COLUMN IF NOT EXISTS is_urgent BOOLEAN DEFAULT false;
+ALTER TABLE b_style_demand ADD COLUMN IF NOT EXISTS source_public_id UUID; -- 用于关联公池来源
+
+-- ================== 13. 商家删除申请表 (OPT-3) ==================
+CREATE TABLE IF NOT EXISTS shop_delete_requests (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    shop_id UUID REFERENCES sys_shop(id),
+    shop_name VARCHAR(100),
+    reason TEXT NOT NULL,
+    status VARCHAR(20) DEFAULT 'pending', -- pending, approved, rejected
+    requested_by VARCHAR(100),
+    requested_at TIMESTAMPTZ DEFAULT NOW(),
+    processed_by VARCHAR(50),
+    processed_at TIMESTAMPTZ,
+    reject_reason TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_shop_delete_requests_status ON shop_delete_requests(status);
+
+-- 启用RLS
+ALTER TABLE shop_delete_requests ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow anonymous access" ON shop_delete_requests FOR ALL USING (true) WITH CHECK (true);
+
+-- ================== 14. 工单归档 (OPT-5) ==================
+CREATE TABLE IF NOT EXISTS b_request_record_archive (
+    LIKE b_request_record INCLUDING ALL
+);
+
+-- 归档函数
+CREATE OR REPLACE FUNCTION archive_old_records()
+RETURNS void AS $$
+BEGIN
+    INSERT INTO b_request_record_archive
+    SELECT * FROM b_request_record
+    WHERE status IN ('completed', 'rejected')
+      AND updated_at < NOW() - INTERVAL '30 days';
+    
+    DELETE FROM b_request_record
+    WHERE status IN ('completed', 'rejected')
+      AND updated_at < NOW() - INTERVAL '30 days';
+END;
+$$ LANGUAGE plpgsql;
+
+-- ================== 15. 私推过期处理 (OPT-8) ==================
+CREATE OR REPLACE FUNCTION process_expired_private_styles()
+RETURNS void AS $$
+BEGIN
+    -- 14天过期：默认拒绝
+    UPDATE b_style_demand
+    SET status = 'rejected',
+        updated_at = NOW()
+    WHERE push_type = 'PRIVATE'
+      AND status = 'new'
+      AND created_at < NOW() - INTERVAL '14 days';
+      
+    -- 7天以上：标记置顶
+    UPDATE b_style_demand
+    SET is_urgent = true
+    WHERE push_type = 'PRIVATE'
+      AND status = 'new'
+      AND created_at < NOW() - INTERVAL '7 days'
+      AND (is_urgent IS NULL OR is_urgent = false);
+END;
+$$ LANGUAGE plpgsql;
+
+-- ================== 16. 公池意向管理 (OPT-10) ==================
+CREATE OR REPLACE FUNCTION decrement_intent_count(style_id UUID)
+RETURNS void AS $$
+BEGIN
+    UPDATE b_public_style
+    SET intent_count = GREATEST(intent_count - 1, 0)
+    WHERE id = style_id;
+END;
+$$ LANGUAGE plpgsql;
+
+-- 数据迁移：将现有shop_name映射到shop_id
+-- UPDATE sys_user u SET shop_id = s.id FROM sys_shop s WHERE u.shop_name = s.shop_name AND u.shop_id IS NULL;

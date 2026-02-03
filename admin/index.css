@@ -186,6 +186,15 @@ body {
   font-size: 18px;
 }
 
+.material-symbols-outlined {
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  overflow: hidden;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
 .submenu {
   padding-left: 16px;
 }

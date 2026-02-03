@@ -1,10 +1,14 @@
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
+    // OPT-1: 获取当前买手身份，用于操作追溯
+    const currentBuyer = localStorage.getItem('current_buyer') || 'Unknown';
+
     const res = await fetch(`${API_BASE}${path}`, {
         ...options,
         headers: {
             'Content-Type': 'application/json',
+            'X-Buyer-Name': currentBuyer,
             ...options?.headers,
         },
     });

@@ -11,6 +11,7 @@ import requestsRouter from './routes/requests';
 import restockRouter from './routes/restock';
 import adminRouter from './routes/admin';
 import authRouter from './routes/auth';
+import notificationsRouter from './routes/notifications'; // OPT-4
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -26,6 +27,7 @@ app.use('/api/requests', requestsRouter);
 app.use('/api/restock', restockRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/auth', authRouter);
+app.use('/api/notifications', notificationsRouter); // OPT-4
 
 // 根路由
 app.get('/', (_, res) => {

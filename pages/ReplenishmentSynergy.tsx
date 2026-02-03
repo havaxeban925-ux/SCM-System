@@ -218,7 +218,29 @@ const ReplenishmentSynergy: React.FC = () => {
                   <td className="px-6 py-5 text-right align-top">
                     <div className="flex flex-col items-end gap-2">
                       {item.status === '待商家接单' && (
-                        <button onClick={() => handleReductionSubmit(item)} className="bg-primary text-white px-4 py-1.5 rounded-lg text-xs font-bold hover:bg-blue-600 transition-all shadow-sm">提交接单/申请</button>
+                        <div className="flex items-center gap-2">
+                          <button onClick={() => handleReductionSubmit(item)} className="bg-primary text-white px-4 py-1.5 rounded-lg text-xs font-bold hover:bg-blue-600 transition-all shadow-sm">提交接单/申请</button>
+                          <button
+                            onClick={async () => {
+                              const reason = prompt('请输入拒绝理由：');
+                              if (reason !== null) {
+                                const API_BASE = (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:3001';
+                                const res = await fetch(`${API_BASE}/api/restock/${item._dbId}/reject`, {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({ reason })
+                                });
+                                if (res.ok) {
+                                  setItems(items.map(i => i.id === item.id ? { ...i, status: 'reviewing' as any } : i));
+                                  alert('已提交拒绝申请，等待买手确认');
+                                }
+                              }
+                            }}
+                            className="bg-red-50 text-red-600 border border-red-200 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-red-100 transition-colors"
+                          >
+                            拒绝接单
+                          </button>
+                        </div>
                       )}
                       {item.status === '生产中' && (
                         <button onClick={() => handleShip(item)} className="text-primary hover:text-blue-700 text-sm font-bold flex items-center gap-1 group">

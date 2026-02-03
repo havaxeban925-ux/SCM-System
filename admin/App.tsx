@@ -32,6 +32,7 @@ const App: React.FC = () => {
     const [loginForm, setLoginForm] = useState({ username: '', password: '' });
     const [loginError, setLoginError] = useState('');
     const [currentView, setCurrentView] = useState<View>('dashboard');
+    const [refreshKey, setRefreshKey] = useState(0);
     const [styleMenuOpen, setStyleMenuOpen] = useState(true);
     const [requestMenuOpen, setRequestMenuOpen] = useState(true);
     const [requestTab, setRequestTab] = useState<any>('style'); // Using any to avoid import issues for now, or string
@@ -40,9 +41,11 @@ const App: React.FC = () => {
     const [registerForm, setRegisterForm] = useState({ username: '', password: '', confirmPassword: '' });
 
     const handleLogin = () => {
+        const validBuyers = ['阿桃', '阿允', '阿秋', '铃酱'];
         const avatar = USER_AVATARS[loginForm.username];
-        if (!avatar) {
-            setLoginError('用户名不存在');
+
+        if (!validBuyers.includes(loginForm.username)) {
+            setLoginError('无效的买手账号');
             return;
         }
         // 密码从环境变量读取
@@ -51,6 +54,8 @@ const App: React.FC = () => {
             setLoginError('密码错误');
             return;
         }
+        // OPT-1: 保存当前买手身份，用于API请求追溯操作人
+        localStorage.setItem('current_buyer', loginForm.username);
         setUser({ name: loginForm.username, avatar });
         setLoginError('');
     };
@@ -253,7 +258,22 @@ const App: React.FC = () => {
                         <span className="breadcrumb-item active">{getViewTitle()}</span>
                     </div>
                 </div>
-                <div className="header-right">
+                <div className="header-right" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    {/* 刷新按钮 */}
+                    <button
+                        className="btn btn-sm btn-outline"
+                        onClick={() => setRefreshKey(k => k + 1)}
+                        style={{
+                            padding: '6px 12px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 4,
+                            fontSize: 13
+                        }}
+                    >
+                        <span className="material-symbols-outlined" style={{ fontSize: 18 }}>refresh</span>
+                        刷新
+                    </button>
                     <button className="header-icon-btn" title="搜索">
                         <span className="material-symbols-outlined">search</span>
                     </button>
@@ -392,17 +412,17 @@ const App: React.FC = () => {
             </aside>
 
             <main className="main-content">
-                <div style={{ display: currentView === 'dashboard' ? 'block' : 'none' }}><Dashboard /></div>
-                <div style={{ display: currentView === 'push' ? 'block' : 'none' }}><PushManage /></div>
-                <div style={{ display: currentView === 'tags' ? 'block' : 'none' }}><TagManage /></div>
-                <div style={{ display: currentView === 'spu' ? 'block' : 'none' }}><SpuLibrary /></div>
-                <div style={{ display: currentView === 'history' ? 'block' : 'none' }}><PushHistory /></div>
-                <div style={{ display: currentView === 'styles' ? 'block' : 'none' }}><StyleManage /></div>
-                <div style={{ display: currentView === 'style_order' ? 'block' : 'none' }}><StyleOrderPage /></div>
-                <div style={{ display: currentView === 'pricing_order' ? 'block' : 'none' }}><PricingOrderPage /></div>
-                <div style={{ display: currentView === 'anomaly_order' ? 'block' : 'none' }}><AnomalyOrderPage /></div>
-                <div style={{ display: currentView === 'bulk_order' ? 'block' : 'none' }}><BulkOrderPage /></div>
-                <div style={{ display: currentView === 'shops' ? 'block' : 'none' }}><ShopManage /></div>
+                <div style={{ display: currentView === 'dashboard' ? 'block' : 'none' }}><Dashboard key={`dashboard-${refreshKey}`} /></div>
+                <div style={{ display: currentView === 'push' ? 'block' : 'none' }}><PushManage key={`push-${refreshKey}`} /></div>
+                <div style={{ display: currentView === 'tags' ? 'block' : 'none' }}><TagManage key={`tags-${refreshKey}`} /></div>
+                <div style={{ display: currentView === 'spu' ? 'block' : 'none' }}><SpuLibrary key={`spu-${refreshKey}`} /></div>
+                <div style={{ display: currentView === 'history' ? 'block' : 'none' }}><PushHistory key={`history-${refreshKey}`} /></div>
+                <div style={{ display: currentView === 'styles' ? 'block' : 'none' }}><StyleManage key={`styles-${refreshKey}`} /></div>
+                <div style={{ display: currentView === 'style_order' ? 'block' : 'none' }}><StyleOrderPage key={`style_order-${refreshKey}`} /></div>
+                <div style={{ display: currentView === 'pricing_order' ? 'block' : 'none' }}><PricingOrderPage key={`pricing_order-${refreshKey}`} /></div>
+                <div style={{ display: currentView === 'anomaly_order' ? 'block' : 'none' }}><AnomalyOrderPage key={`anomaly_order-${refreshKey}`} /></div>
+                <div style={{ display: currentView === 'bulk_order' ? 'block' : 'none' }}><BulkOrderPage key={`bulk_order-${refreshKey}`} /></div>
+                <div style={{ display: currentView === 'shops' ? 'block' : 'none' }}><ShopManage key={`shops-${refreshKey}`} /></div>
             </main>
         </div>
     );

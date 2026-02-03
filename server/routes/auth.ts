@@ -69,7 +69,6 @@ router.post('/register', async (req, res) => {
             return res.status(500).json({ error: error.message });
         }
 
-        console.log(`Registered user (pending): ${username}`);
         res.json({ success: true, user: data });
 
     } catch (err: any) {
@@ -106,7 +105,6 @@ router.post('/login', async (req, res) => {
             return res.status(403).json({ error: `账号已被驳回: ${user.reject_reason || '无原因'}` });
         }
 
-        console.log(`User logged in: ${username}`);
         res.json({ success: true, user });
 
     } catch (err: any) {
@@ -188,13 +186,8 @@ router.post('/approve', async (req, res) => {
                         error: `店铺创建失败 (请截图联系开发): ${insertShopError.message} - Helper: ${insertShopError.details || 'No details'}`
                     });
                 }
-
-                console.log(`Synced shop to sys_shop: ${user.shop_name} (KEY: ${safeKeyId}, Code: ${safeShopCode})`);
             }
-        } else {
-            // 理论上注册时校验了 shop_name，但如果为空，这里是否允许批准？
-            // 暂允许名为 null 的情况通过（兼容旧数据），但建议前端注册必填
-            console.warn(`User ${userId} has no shop_name, skipping sys_shop sync.`);
+            // 允许无店铺名的情况通过（兼容旧数据）
         }
 
         // 3. 更新用户状态 (仅当店铺创建成功后执行)
@@ -211,7 +204,6 @@ router.post('/approve', async (req, res) => {
             return res.status(500).json({ error: updateError.message });
         }
 
-        console.log(`Approved user: ${userId}`);
         res.json({ success: true });
     } catch (err: any) {
         console.error('Unexpected error:', err);
@@ -242,7 +234,6 @@ router.post('/reject', async (req, res) => {
             return res.status(500).json({ error: error.message });
         }
 
-        console.log(`Rejected user: ${userId}, reason: ${reason}`);
         res.json({ success: true });
     } catch (err: any) {
         console.error('Unexpected error:', err);

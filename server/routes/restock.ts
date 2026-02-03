@@ -56,7 +56,7 @@ router.post('/:id/confirm', async (req, res) => {
     }
 
     const actualQty = order.actual_quantity ?? order.plan_quantity;
-    const newStatus = actualQty < order.plan_quantity ? '待买手复核' : '生产中';
+    const newStatus = actualQty < order.plan_quantity ? 'reviewing' : 'producing';
 
     const { error } = await supabase
         .from('b_restock_order')
@@ -76,7 +76,7 @@ router.post('/:id/review', async (req, res) => {
     const { id } = req.params;
     const { agree } = req.body;
 
-    const newStatus = agree ? '生产中' : '已取消';
+    const newStatus = agree ? 'producing' : 'cancelled';
 
     const { error } = await supabase
         .from('b_restock_order')
@@ -122,7 +122,7 @@ router.post('/:id/ship', async (req, res) => {
     const { error } = await supabase
         .from('b_restock_order')
         .update({
-            status: '待买手确认入仓',
+            status: 'confirming',
             updated_at: new Date().toISOString()
         })
         .eq('id', id);
@@ -170,7 +170,7 @@ router.post('/:id/arrival', async (req, res) => {
     const { error } = await supabase
         .from('b_restock_order')
         .update({
-            status: isCompleted ? '已确认入仓' : '待买手确认入仓',
+            status: isCompleted ? 'confirmed' : 'confirming',
             arrived_quantity: newArrivedQty,
             updated_at: new Date().toISOString()
         })
@@ -192,6 +192,42 @@ router.get('/:id/logistics', async (req, res) => {
 
     if (error) return res.status(500).json({ error: error.message });
     res.json(data || []);
+});
+
+// OPT-7: POST /api/restock/:id/reject - 商家拒绝补货订单
+router.post('/:id/reject', async (req, res) => {
+    const { id } = req.params;
+    const { reason } = req.body;
+
+    const { error } = await supabase
+        .from('b_restock_order')
+        .update({
+            status: 'reviewing', // 待买手复核确认取消
+            reduction_reason: reason || '商家拒绝接单',
+            updated_at: new Date().toISOString()
+        })
+        .eq('id', id);
+
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ success: true });
+});
+
+// OPT-7: POST /api/restock/:id/cancel-confirm - 买手确认取消订单
+router.post('/:id/cancel-confirm', async (req, res) => {
+    const { id } = req.params;
+    const buyerName = req.headers['x-buyer-name'] as string || 'Unknown';
+
+    const { error } = await supabase
+        .from('b_restock_order')
+        .update({
+            status: 'cancelled',
+            remark: `由${buyerName}确认取消`,
+            updated_at: new Date().toISOString()
+        })
+        .eq('id', id);
+
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ success: true });
 });
 
 export default router;

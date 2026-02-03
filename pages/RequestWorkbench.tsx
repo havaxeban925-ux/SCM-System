@@ -66,11 +66,13 @@ const RequestWorkbench: React.FC<Props> = ({ onNewRequest }) => {
   // 过滤记录
   const filteredRecords = useMemo(() => {
     return records.filter(r => {
-      if (searchModule && (r.type === 'pricing' ? '核价类' : '异常类').indexOf(searchModule) === -1) return false;
+      // 支持款式类筛选
+      const typeLabel = r.type === 'pricing' ? '核价类' : r.type === 'style' ? '款式类' : '异常类';
+      if (searchModule && typeLabel.indexOf(searchModule) === -1) return false;
       if (searchSubType && !r.subType.includes(searchSubType)) return false;
       if (searchCode && !r.targetCodes.some(c => c.includes(searchCode))) return false;
       if (searchStatus) {
-        const statusMap: Record<string, string> = { processing: '处理中', completed: '已完成', rejected: '已驳回' };
+        const statusMap: Record<string, string> = { processing: '处理中', completed: '已完成', rejected: '已驳回', viewed: '已查看' };
         if (statusMap[r.status] !== searchStatus) return false;
       }
       return true;
@@ -202,6 +204,7 @@ const RequestWorkbench: React.FC<Props> = ({ onNewRequest }) => {
             <option value="">全部</option>
             <option value="核价类">核价类</option>
             <option value="异常类">异常类</option>
+            <option value="款式类">款式类</option>
           </select>
         </div>
         <div className="flex flex-col gap-1">
@@ -238,6 +241,12 @@ const RequestWorkbench: React.FC<Props> = ({ onNewRequest }) => {
                 <option value="申请下架">申请下架</option>
                 <option value="图片异常">图片异常</option>
                 <option value="大货异常">大货异常</option>
+                <option value="申请发款">申请发款</option>
+              </>
+            )}
+            {searchModule === '款式类' && (
+              <>
+                <option value="申请发款">申请发款</option>
               </>
             )}
           </select>
@@ -263,6 +272,7 @@ const RequestWorkbench: React.FC<Props> = ({ onNewRequest }) => {
             <option value="处理中">处理中</option>
             <option value="已完成">已完成</option>
             <option value="已驳回">已驳回</option>
+            <option value="已查看">已查看</option>
           </select>
         </div>
         <button
@@ -435,6 +445,106 @@ const RequestWorkbench: React.FC<Props> = ({ onNewRequest }) => {
 
             <div className="p-4 border-t border-slate-200 bg-slate-50 flex justify-end">
               <button onClick={() => setSelectedRequest(null)} className="px-6 py-2 bg-white border border-slate-300 rounded-lg text-sm font-bold">关闭</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Style Application Detail Modal */}
+      {selectedRequest && selectedRequest.type === 'style' && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center p-6">
+          <div className="absolute inset-0 bg-navy-900/60 backdrop-blur-sm" onClick={() => setSelectedRequest(null)}></div>
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95">
+            <div className="px-6 py-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
+              <h3 className="font-bold text-lg text-navy-700">款式申请详情: {selectedRequest.id.slice(0, 12)}</h3>
+              <button onClick={() => setSelectedRequest(null)} className="material-symbols-outlined text-slate-400">close</button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar">
+              {/* 基本信息 */}
+              <div>
+                <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-3 border-l-4 border-purple-500 pl-3">基本信息</h4>
+                <div className="grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded-lg">
+                  <div>
+                    <span className="text-xs text-slate-500">店铺名称</span>
+                    <p className="font-bold text-navy-700 mt-1">{selectedRequest.targetCodes[0] || '未知店铺'}</p>
+                  </div>
+                  <div>
+                    <span className="text-xs text-slate-500">提交时间</span>
+                    <p className="font-mono text-sm text-slate-600 mt-1">{selectedRequest.submitTime}</p>
+                  </div>
+                  <div>
+                    <span className="text-xs text-slate-500">状态</span>
+                    <p className="mt-1">
+                      <span className={`px-2 py-1 text-xs font-bold rounded ${selectedRequest.status === 'viewed' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
+                        }`}>
+                        {selectedRequest.status === 'viewed' ? '已查看' : '待查看'}
+                      </span>
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* 款式图片 */}
+              {selectedRequest.pricingDetails && selectedRequest.pricingDetails[0]?.images && (
+                <div>
+                  <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-3 border-l-4 border-purple-500 pl-3">款式图片</h4>
+                  <div className="grid grid-cols-5 gap-3">
+                    {selectedRequest.pricingDetails[0].images.filter((img: string) => img).map((img: string, idx: number) => (
+                      <div key={idx} className="aspect-square rounded-lg overflow-hidden border-2 border-slate-200 hover:border-purple-400 transition-colors">
+                        <img src={img} alt={`款式图${idx + 1}`} className="w-full h-full object-cover cursor-pointer" />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* 备注信息 */}
+              {selectedRequest.pricingDetails && selectedRequest.pricingDetails[0]?.remark && (
+                <div>
+                  <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-3 border-l-4 border-purple-500 pl-3">备注信息</h4>
+                  <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
+                    <p className="text-sm text-slate-700 whitespace-pre-wrap">{selectedRequest.pricingDetails[0].remark}</p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* 操作按钮 */}
+            <div className="px-6 py-4 border-t border-slate-200 bg-slate-50 flex justify-end gap-3">
+              <button
+                onClick={() => setSelectedRequest(null)}
+                className="px-4 py-2 border border-slate-300 rounded-lg text-sm font-bold text-slate-600 hover:bg-white transition-colors"
+              >
+                关闭
+              </button>
+              {selectedRequest.status !== 'viewed' && (
+                <button
+                  onClick={async () => {
+                    try {
+                      const response = await fetch(`/api/requests/${selectedRequest.id}/status`, {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ status: 'viewed' })
+                      });
+                      if (response.ok) {
+                        // 更新本地状态
+                        setRecords(prev => prev.map(r =>
+                          r.id === selectedRequest.id ? { ...r, status: 'viewed' } : r
+                        ));
+                        setSelectedRequest({ ...selectedRequest, status: 'viewed' });
+                        alert('已确认查看');
+                      }
+                    } catch (err) {
+                      console.error('确认失败:', err);
+                      alert('确认失败，请重试');
+                    }
+                  }}
+                  className="px-5 py-2 bg-purple-600 text-white rounded-lg text-sm font-bold hover:bg-purple-700 transition-colors shadow-sm"
+                >
+                  确认
+                </button>
+              )}
             </div>
           </div>
         </div>

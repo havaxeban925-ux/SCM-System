@@ -142,7 +142,8 @@ router.post('/public/:id/confirm', async (req, res) => {
         timestamp_label: '刚刚',
         status: 'developing',
         development_status: 'drafting',
-        confirm_time: new Date().toISOString()
+        confirm_time: new Date().toISOString(),
+        source_public_id: id // OPT-10: 记录公池来源
     };
 
     const { data, error } = await supabase
@@ -162,6 +163,42 @@ router.post('/public/:id/confirm', async (req, res) => {
     }
 
     res.json(data);
+});
+
+// OPT-10: POST /api/styles/public/:id/give-up - 放弃公池意向，款式退回公池
+router.post('/public/:id/give-up', async (req, res) => {
+    const { id } = req.params;
+    const { styleId } = req.body; // 私推记录ID
+
+    try {
+        // 1. 删除对应的私推记录
+        if (styleId) {
+            await supabase
+                .from('b_style_demand')
+                .delete()
+                .eq('id', styleId);
+        }
+
+        // 2. 减少公池款式的意向计数
+        const { data: publicStyle } = await supabase
+            .from('b_public_style')
+            .select('intent_count')
+            .eq('id', id)
+            .single();
+
+        if (publicStyle) {
+            await supabase
+                .from('b_public_style')
+                .update({
+                    intent_count: Math.max((publicStyle.intent_count || 1) - 1, 0)
+                })
+                .eq('id', id);
+        }
+
+        res.json({ success: true });
+    } catch (err: any) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
 export default router;

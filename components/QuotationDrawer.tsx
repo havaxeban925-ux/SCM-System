@@ -49,17 +49,65 @@ const TableInput = ({ value, onChange, type = "text", align = "center", placehol
 );
 
 // 图片上传格子 (5格均可上传)
-const InputImageGrid = () => (
-  <div className="grid grid-cols-5 gap-3">
-    {['款式主图*', '唛架图1', '色卡图1', '唛架图2', '色卡图2'].map((label, i) => (
-      <div key={i} className={`aspect-square border-2 border-dashed ${i === 0 ? 'border-blue-400 bg-blue-50' : 'border-slate-300 bg-slate-50'} hover:bg-blue-50 hover:border-blue-400 rounded-lg flex flex-col items-center justify-center cursor-pointer transition-all group`}>
-        <span className="material-symbols-outlined text-2xl text-slate-300 group-hover:text-blue-500 mb-1">{i === 0 ? 'checkroom' : 'image'}</span>
-        <span className="font-bold text-[9px] text-slate-600 text-center">{label}</span>
-        {i === 0 && <span className="text-[8px] text-red-400 mt-0.5">必须</span>}
-      </div>
-    ))}
-  </div>
-);
+const InputImageGrid = ({ images, setImages }: { images: string[]; setImages: (imgs: string[]) => void }) => {
+  const handleFileChange = async (index: number, file: File | null) => {
+    if (!file) return;
+
+    // 验证文件大小（限制1MB）
+    if (file.size > 1024 * 1024) {
+      alert('图片文件不能超过1MB');
+      return;
+    }
+
+    // 验证文件类型
+    if (!file.type.startsWith('image/')) {
+      alert('只能上传图片文件');
+      return;
+    }
+
+    // 转换为Base64
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const base64 = e.target?.result as string;
+      const newImages = [...images];
+      newImages[index] = base64;
+      setImages(newImages);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  return (
+    <div className="grid grid-cols-5 gap-3">
+      {['款式主图*', '唛架图1', '色卡图1', '唛架图2', '色卡图2'].map((label, i) => (
+        <label
+          key={i}
+          className={`aspect-square border-2 border-dashed ${i === 0 ? 'border-blue-400 bg-blue-50' : 'border-slate-300 bg-slate-50'} hover:bg-blue-50 hover:border-blue-400 rounded-lg flex flex-col items-center justify-center cursor-pointer transition-all group relative overflow-hidden`}
+        >
+          <input
+            type="file"
+            accept="image/*"
+            onChange={(e) => handleFileChange(i, e.target.files?.[0] || null)}
+            className="hidden"
+          />
+          {images[i] ? (
+            <>
+              <img src={images[i]} alt={label} className="absolute inset-0 w-full h-full object-cover" />
+              <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                <span className="material-symbols-outlined text-white text-2xl">edit</span>
+              </div>
+            </>
+          ) : (
+            <>
+              <span className="material-symbols-outlined text-2xl text-slate-300 group-hover:text-blue-500 mb-1">{i === 0 ? 'checkroom' : 'image'}</span>
+              <span className="font-bold text-[9px] text-slate-600 text-center">{label}</span>
+              {i === 0 && <span className="text-[8px] text-red-400 mt-0.5">必须</span>}
+            </>
+          )}
+        </label>
+      ))}
+    </div>
+  );
+};
 
 // 利润控制组件 (新需求: 布局调整)
 const ProfitControl = ({ label, actualProfit, setActualProfit, rate, setRate, calculatedProfit }: any) => (
@@ -101,13 +149,19 @@ const ProfitControl = ({ label, actualProfit, setActualProfit, rate, setRate, ca
 // ============================================================================
 
 const RequestDrawer: React.FC<Props> = ({ onClose }) => {
-  const [module, setModule] = useState<'pricing' | 'anomaly'>('pricing');
+  const [module, setModule] = useState<'pricing' | 'anomaly' | 'style'>('pricing');
   const [pricingSubType, setPricingSubType] = useState('');
   const [anomalyType, setAnomalyType] = useState('size');
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [showSecondary, setShowSecondary] = useState(false);
   const [previewMode, setPreviewMode] = useState(false);
   const [quoteList, setQuoteList] = useState<any[]>([]);
+
+  // 款式申请状态
+  const [styleApplicationList, setStyleApplicationList] = useState<any[]>([]);
+  const [styleShopName, setStyleShopName] = useState('');
+  const [styleImages, setStyleImages] = useState<string[]>([]);
+  const [styleRemark, setStyleRemark] = useState('');
 
   // 通用表单
   const [shopName, setShopName] = useState('');
@@ -156,6 +210,10 @@ const RequestDrawer: React.FC<Props> = ({ onClose }) => {
   const [wProfit, setWProfit] = useState('');
   const wFinalPrice = wTotalCost + (parseFloat(wProfit) || 0);
 
+  // 图片状态
+  const [quoteImages, setQuoteImages] = useState<string[]>([]);
+  const [currentImages, setCurrentImages] = useState<string[]>([]); // 当前正在编辑的报价单图片
+
   useEffect(() => {
     if (pricingSubType.includes('报价单')) {
       setShowSecondary(true);
@@ -193,11 +251,39 @@ const RequestDrawer: React.FC<Props> = ({ onClose }) => {
 
   const confirmAddQuote = () => {
     const isWool = pricingSubType === '报价单 (毛织)';
-    const item = { type: pricingSubType, code: isWool ? styleNo : skc, price: isWool ? wFinalPrice.toFixed(2) : nwFinalPrice.toFixed(2), shop: shopName };
-    if (!item.code || parseFloat(item.price) <= 0) return alert('请完善信息');
+
+    // 验证主图必须上传
+    if (!currentImages[0]) {
+      alert('请上传款式主图（必填）');
+      return;
+    }
+
+    const item = {
+      type: pricingSubType,
+      code: isWool ? styleNo : skc,
+      price: isWool ? wFinalPrice.toFixed(2) : nwFinalPrice.toFixed(2),
+      shop: shopName,
+      images: [...currentImages] // 包含图片数据
+    };
+
+    if (!item.code || parseFloat(item.price) <= 0) {
+      alert('请完善信息');
+      return;
+    }
+
     setQuoteList([...quoteList, item]);
     setPreviewMode(false);
-    if (isWool) { setStyleNo(''); setWProfit(''); } else { setSkc(''); setNwProfit(''); }
+
+    // 清空表单和图片
+    if (isWool) {
+      setStyleNo('');
+      setWProfit('');
+    } else {
+      setSkc('');
+      setNwProfit('');
+    }
+    setCurrentImages([]); // 清空图片
+
     alert('已添加到待提交列表');
   };
 
@@ -371,7 +457,7 @@ const RequestDrawer: React.FC<Props> = ({ onClose }) => {
                         <div className="text-right"><p className="text-2xl font-black">¥ {nwFinalPrice.toFixed(2)}</p></div>
                       </div>
 
-                      <SectionBox title="图片凭证"><InputImageGrid /></SectionBox>
+                      <SectionBox title="图片凭证"><InputImageGrid images={currentImages} setImages={setCurrentImages} /></SectionBox>
                       <div className="sticky bottom-0 z-10 bg-[#f1f5f9] pt-4 pb-2"><button onClick={() => setPreviewMode(true)} className="w-full py-3 bg-slate-800 text-white font-bold rounded-lg shadow hover:bg-slate-700 transition-all flex items-center justify-center gap-2"><span className="material-symbols-outlined text-sm">visibility</span> 生成预览图</button></div>
                     </>
                   )}
@@ -431,7 +517,7 @@ const RequestDrawer: React.FC<Props> = ({ onClose }) => {
                         <div className="text-right"><p className="text-2xl font-black">¥ {wFinalPrice.toFixed(2)}</p></div>
                       </div>
 
-                      <SectionBox title="图片凭证"><InputImageGrid /></SectionBox>
+                      <SectionBox title="图片凭证"><InputImageGrid images={currentImages} setImages={setCurrentImages} /></SectionBox>
                       <div className="sticky bottom-0 z-10 bg-[#f1f5f9] pt-4 pb-2"><button onClick={() => setPreviewMode(true)} className="w-full py-3 bg-slate-800 text-white font-bold rounded-lg shadow hover:bg-slate-700 transition-all flex items-center justify-center gap-2"><span className="material-symbols-outlined text-sm">visibility</span> 生成预览图</button></div>
                     </>
                   )}
@@ -448,12 +534,92 @@ const RequestDrawer: React.FC<Props> = ({ onClose }) => {
             <button onClick={onClose} className="material-symbols-outlined hover:rotate-90 transition-transform">close</button>
           </div>
           <div className="flex-1 overflow-y-auto p-5 space-y-5 bg-slate-50/30 custom-scrollbar">
-            <section><label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">申请大类</label><div className="flex p-1 bg-slate-200/50 rounded-xl"><button onClick={() => setModule('pricing')} className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${module === 'pricing' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500'}`}>核价类</button><button onClick={() => setModule('anomaly')} className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${module === 'anomaly' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500'}`}>异常类</button></div></section>
-            {module === 'pricing' ? (<div className="space-y-4 animate-in fade-in slide-in-from-top-1 duration-300"><div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-5"><div><label className="block text-xs font-bold text-slate-500 mb-1.5">二级模块</label><select className="w-full border border-slate-200 rounded-lg text-sm h-10 px-2 font-medium" value={pricingSubType} onChange={e => setPricingSubType(e.target.value)}><option value="">(请选择)</option><option>报价单 (毛织)</option><option>报价单 (非毛织)</option><option>同款同价</option><option>申请涨价</option></select></div>
-              {quoteList.length > 0 && (pricingSubType.includes('报价单')) && (<div className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-sm max-h-[200px] overflow-y-auto animate-in fade-in"><div className="bg-slate-50 px-3 py-2 border-b border-slate-200 text-xs font-bold text-slate-600">待提交报价单列表</div><table className="w-full text-left text-[11px]"><tbody className="divide-y divide-slate-100">{quoteList.map((item, idx) => (<tr key={idx} className="hover:bg-slate-50"><td className="p-2 font-bold">{item.type.includes('毛织') ? '毛' : '非'} | {item.code}</td><td className="p-2 text-slate-500">{item.shop}</td><td className="p-2 font-bold text-emerald-600 text-right">¥ {item.price}</td><td className="p-2 text-right w-10"><button onClick={() => setQuoteList(quoteList.filter((_, i) => i !== idx))} className="text-slate-300 hover:text-red-500 material-symbols-outlined text-sm">delete</button></td></tr>))}</tbody></table></div>)}
-              {pricingSubType === '同款同价' && (<div className="space-y-4 animate-in fade-in duration-300"><div className="space-y-4 p-4 bg-slate-50 rounded-xl border border-slate-100"><div><label className="block text-xs font-bold text-navy-700 mb-1.5">需复核 SKC</label><textarea className="w-full border border-slate-300 rounded text-sm p-2 min-h-[80px] bg-white outline-none focus:border-blue-500" value={targetCodes} onChange={e => setTargetCodes(e.target.value)} placeholder="多个SKC请换行分隔" /></div><div><label className="block text-xs font-bold text-navy-700 mb-1.5">系统建议价</label><VisibleInput value={suggestedPrice} onChange={(e: any) => setSuggestedPrice(e.target.value)} /></div><div className="pt-3 border-t border-slate-200 grid grid-cols-2 gap-4"><div><label className="block text-[10px] font-bold text-navy-700 mb-1">已核价 SKC</label><VisibleInput value={refCode} onChange={(e: any) => setRefCode(e.target.value)} /></div><div><label className="block text-[10px] font-bold text-navy-700 mb-1">已核价SKC通过价</label><VisibleInput value={refPrice} onChange={(e: any) => setRefPrice(e.target.value)} /></div></div>{parseFloat(refPrice) > 0 && parseFloat(suggestedPrice) > 0 && parseFloat(refPrice) <= parseFloat(suggestedPrice) && (<div className="text-xs text-red-500 font-bold bg-red-50 p-2 rounded">⚠️ 已核价SKC通过价必须大于系统建议价</div>)}<div className="flex gap-2"><button onClick={() => { if (parseFloat(refPrice) <= parseFloat(suggestedPrice)) { alert('已核价SKC通过价必须大于系统建议价'); return; } handleAddSamePrice(); }} className="flex-1 py-2.5 bg-emerald-500 text-white rounded-xl text-xs font-bold shadow-md hover:bg-emerald-600">添加</button></div></div>{samePriceList.length > 0 && (<div className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-sm max-h-[180px] overflow-y-auto"><table className="w-full text-left text-[11px]"><thead className="bg-[#f2f2f2] border-b border-slate-200 font-bold sticky top-0 z-10"><tr><th className="p-2.5">需复核SKC</th><th className="p-2.5">申请价格</th><th className="p-2.5 text-right"></th></tr></thead><tbody className="divide-y divide-slate-100">{samePriceList.map((item, idx) => (<tr key={idx}><td className="p-2.5 font-bold">{item.targetCode}</td><td className="p-2.5 font-bold text-emerald-600">¥{item.refPrice}</td><td className="p-2.5 text-right"><button onClick={() => setSamePriceList(samePriceList.filter((_, i) => i !== idx))} className="material-symbols-outlined text-slate-300 hover:text-red-500 text-base">delete</button></td></tr>))}</tbody></table></div>)}</div>)}
-              {pricingSubType === '申请涨价' && (<div className="space-y-4 animate-in fade-in duration-300"><div className="space-y-4 p-4 bg-slate-50 rounded-xl border border-slate-100"><div><label className="block text-xs font-bold text-navy-700 mb-1.5">需涨价 SKU</label><textarea className="w-full border border-slate-300 rounded text-sm p-2 min-h-[80px] bg-white outline-none focus:border-blue-500" value={targetCodes} onChange={e => setTargetCodes(e.target.value)} placeholder="多个SKU请换行分隔" /></div><div><label className="block text-xs font-bold text-navy-700 mb-1.5">申请涨回价格</label><VisibleInput value={increasePrice} onChange={(e: any) => setIncreasePrice(e.target.value)} className="font-bold text-amber-600" /></div><div className="flex gap-2"><button onClick={handleAddIncrease} className="flex-1 py-2.5 bg-amber-500 text-white rounded-xl text-xs font-bold shadow-md hover:bg-amber-600">添加</button></div></div>{increaseList.length > 0 && (<div className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-sm max-h-[180px] overflow-y-auto"><table className="w-full text-left text-[11px]"><thead className="bg-[#f2f2f2] border-b border-slate-200 font-bold sticky top-0 z-10"><tr><th className="p-2.5">SKU</th><th className="p-2.5">价格</th><th className="p-2.5 text-right"></th></tr></thead><tbody className="divide-y divide-slate-100">{increaseList.map((item, idx) => (<tr key={idx}><td className="p-2.5 font-bold">{item.targetCode}</td><td className="p-2.5 font-bold text-amber-600">¥{item.increasePrice}</td><td className="p-2.5 text-right"><button onClick={() => setIncreaseList(increaseList.filter((_, i) => i !== idx))} className="material-symbols-outlined text-slate-300 hover:text-red-500 text-base">delete</button></td></tr>))}</tbody></table></div>)}</div>)}
-              {(pricingSubType.includes('报价单')) && (<div className="p-4 bg-blue-50 rounded-2xl border border-blue-100 flex items-start gap-3 shadow-inner"><span className="material-symbols-outlined text-blue-500 text-xl">arrow_back</span><div><p className="text-xs text-blue-800 font-bold">请在左侧填写明细</p><p className="text-[10px] text-blue-700 mt-1 leading-relaxed font-medium">侧边栏已展开，请填写完整的成本明细并生成预览。</p></div></div>)}</div></div>) : (<div className="space-y-4 animate-in fade-in slide-in-from-top-1 duration-300"><div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4"><div><label className="block text-xs font-black text-slate-500 mb-2 uppercase tracking-widest">二级模块</label><select className="w-full border border-slate-200 rounded-lg text-sm h-10 px-2 font-medium" value={anomalyType} onChange={e => setAnomalyType(e.target.value)}><option value="size">尺码问题</option><option value="discontinue">申请下架</option><option value="image">图片异常</option><option value="bulk">大货异常</option></select></div><div><label className="block text-xs font-bold text-navy-700 mb-1.5">{anomalyType === 'size' ? '商品SPU' : anomalyType === 'bulk' ? 'WB单号' : '商品SKC'}</label><VisibleInput value={targetCodes} onChange={(e: any) => setTargetCodes(e.target.value)} placeholder={anomalyType === 'bulk' ? '请输入WB单号' : ''} /></div></div></div>)}
+            <section><label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">申请大类</label><div className="flex p-1 bg-slate-200/50 rounded-xl"><button onClick={() => setModule('pricing')} className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${module === 'pricing' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500'}`}>核价类</button><button onClick={() => setModule('anomaly')} className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${module === 'anomaly' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500'}`}>异常类</button><button onClick={() => setModule('style')} className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${module === 'style' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500'}`}>款式类</button></div></section>
+            {module === 'pricing' ? (
+              <div className="space-y-4 animate-in fade-in slide-in-from-top-1 duration-300"><div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-5"><div><label className="block text-xs font-bold text-slate-500 mb-1.5">二级模块</label><select className="w-full border border-slate-200 rounded-lg text-sm h-10 px-2 font-medium" value={pricingSubType} onChange={e => setPricingSubType(e.target.value)}><option value="">(请选择)</option><option>报价单 (毛织)</option><option>报价单 (非毛织)</option><option>同款同价</option><option>申请涨价</option></select></div>
+                {quoteList.length > 0 && (pricingSubType.includes('报价单')) && (<div className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-sm max-h-[200px] overflow-y-auto animate-in fade-in"><div className="bg-slate-50 px-3 py-2 border-b border-slate-200 text-xs font-bold text-slate-600">待提交报价单列表</div><table className="w-full text-left text-[11px]"><tbody className="divide-y divide-slate-100">{quoteList.map((item, idx) => (<tr key={idx} className="hover:bg-slate-50"><td className="p-2 font-bold">{item.type.includes('毛织') ? '毛' : '非'} | {item.code}</td><td className="p-2 text-slate-500">{item.shop}</td><td className="p-2 font-bold text-emerald-600 text-right">¥ {item.price}</td><td className="p-2 text-right w-10"><button onClick={() => setQuoteList(quoteList.filter((_, i) => i !== idx))} className="text-slate-300 hover:text-red-500 material-symbols-outlined text-sm">delete</button></td></tr>))}</tbody></table></div>)}
+                {pricingSubType === '同款同价' && (<div className="space-y-4 animate-in fade-in duration-300"><div className="space-y-4 p-4 bg-slate-50 rounded-xl border border-slate-100"><div><label className="block text-xs font-bold text-navy-700 mb-1.5">需复核 SKC</label><textarea className="w-full border border-slate-300 rounded text-sm p-2 min-h-[80px] bg-white outline-none focus:border-blue-500" value={targetCodes} onChange={e => setTargetCodes(e.target.value)} placeholder="多个SKC请换行分隔" /></div><div><label className="block text-xs font-bold text-navy-700 mb-1.5">系统建议价</label><VisibleInput value={suggestedPrice} onChange={(e: any) => setSuggestedPrice(e.target.value)} /></div><div className="pt-3 border-t border-slate-200 grid grid-cols-2 gap-4"><div><label className="block text-[10px] font-bold text-navy-700 mb-1">已核价 SKC</label><VisibleInput value={refCode} onChange={(e: any) => setRefCode(e.target.value)} /></div><div><label className="block text-[10px] font-bold text-navy-700 mb-1">已核价SKC通过价</label><VisibleInput value={refPrice} onChange={(e: any) => setRefPrice(e.target.value)} /></div></div>{parseFloat(refPrice) > 0 && parseFloat(suggestedPrice) > 0 && parseFloat(refPrice) <= parseFloat(suggestedPrice) && (<div className="text-xs text-red-500 font-bold bg-red-50 p-2 rounded">⚠️ 已核价SKC通过价必须大于系统建议价</div>)}<div className="flex gap-2"><button onClick={() => { if (parseFloat(refPrice) <= parseFloat(suggestedPrice)) { alert('已核价SKC通过价必须大于系统建议价'); return; } handleAddSamePrice(); }} className="flex-1 py-2.5 bg-emerald-500 text-white rounded-xl text-xs font-bold shadow-md hover:bg-emerald-600">添加</button></div></div>{samePriceList.length > 0 && (<div className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-sm max-h-[180px] overflow-y-auto"><table className="w-full text-left text-[11px]"><thead className="bg-[#f2f2f2] border-b border-slate-200 font-bold sticky top-0 z-10"><tr><th className="p-2.5">需复核SKC</th><th className="p-2.5">申请价格</th><th className="p-2.5 text-right"></th></tr></thead><tbody className="divide-y divide-slate-100">{samePriceList.map((item, idx) => (<tr key={idx}><td className="p-2.5 font-bold">{item.targetCode}</td><td className="p-2.5 font-bold text-emerald-600">¥{item.refPrice}</td><td className="p-2.5 text-right"><button onClick={() => setSamePriceList(samePriceList.filter((_, i) => i !== idx))} className="material-symbols-outlined text-slate-300 hover:text-red-500 text-base">delete</button></td></tr>))}</tbody></table></div>)}</div>)}
+                {pricingSubType === '申请涨价' && (<div className="space-y-4 animate-in fade-in duration-300"><div className="space-y-4 p-4 bg-slate-50 rounded-xl border border-slate-100"><div><label className="block text-xs font-bold text-navy-700 mb-1.5">需涨价 SKU</label><textarea className="w-full border border-slate-300 rounded text-sm p-2 min-h-[80px] bg-white outline-none focus:border-blue-500" value={targetCodes} onChange={e => setTargetCodes(e.target.value)} placeholder="多个SKU请换行分隔" /></div><div><label className="block text-xs font-bold text-navy-700 mb-1.5">申请涨回价格</label><VisibleInput value={increasePrice} onChange={(e: any) => setIncreasePrice(e.target.value)} className="font-bold text-amber-600" /></div><div className="flex gap-2"><button onClick={handleAddIncrease} className="flex-1 py-2.5 bg-amber-500 text-white rounded-xl text-xs font-bold shadow-md hover:bg-amber-600">添加</button></div></div>{increaseList.length > 0 && (<div className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-sm max-h-[180px] overflow-y-auto"><table className="w-full text-left text-[11px]"><thead className="bg-[#f2f2f2] border-b border-slate-200 font-bold sticky top-0 z-10"><tr><th className="p-2.5">SKU</th><th className="p-2.5">价格</th><th className="p-2.5 text-right"></th></tr></thead><tbody className="divide-y divide-slate-100">{increaseList.map((item, idx) => (<tr key={idx}><td className="p-2.5 font-bold">{item.targetCode}</td><td className="p-2.5 font-bold text-amber-600">¥{item.increasePrice}</td><td className="p-2.5 text-right"><button onClick={() => setIncreaseList(increaseList.filter((_, i) => i !== idx))} className="material-symbols-outlined text-slate-300 hover:text-red-500 text-base">delete</button></td></tr>))}</tbody></table></div>)}</div>)}
+                {(pricingSubType.includes('报价单')) && (<div className="p-4 bg-blue-50 rounded-2xl border border-blue-100 flex items-start gap-3 shadow-inner"><span className="material-symbols-outlined text-blue-500 text-xl">arrow_back</span><div><p className="text-xs text-blue-800 font-bold">请在左侧填写明细</p><p className="text-[10px] text-blue-700 mt-1 leading-relaxed font-medium">侧边栏已展开，请填写完整的成本明细并生成预览。</p></div></div>)}</div></div>
+            ) : module === 'anomaly' ? (
+              <div className="space-y-4 animate-in fade-in slide-in-from-top-1 duration-300"><div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4"><div><label className="block text-xs font-black text-slate-500 mb-2 uppercase tracking-widest">二级模块</label><select className="w-full border border-slate-200 rounded-lg text-sm h-10 px-2 font-medium" value={anomalyType} onChange={e => setAnomalyType(e.target.value)}><option value="size">尺码问题</option><option value="discontinue">申请下架</option><option value="image">图片异常</option><option value="bulk">大货异常</option></select></div><div><label className="block text-xs font-bold text-navy-700 mb-1.5">{anomalyType === 'size' ? '商品SPU' : anomalyType === 'bulk' ? 'WB单号' : '商品SKC'}</label><VisibleInput value={targetCodes} onChange={(e: any) => setTargetCodes(e.target.value)} placeholder={anomalyType === 'bulk' ? '请输入WB单号' : ''} /></div></div></div>
+            ) : (
+              /* 款式类 */
+              <div className="space-y-4 animate-in fade-in slide-in-from-top-1 duration-300">
+                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-5">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 mb-1.5">店铺名称</label>
+                    <VisibleInput value={styleShopName} onChange={(e: any) => setStyleShopName(e.target.value)} placeholder="请输入店铺名称" />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 mb-2">款式图片 *</label>
+                    <InputImageGrid images={styleImages} setImages={setStyleImages} />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 mb-1.5">备注</label>
+                    <textarea
+                      className="w-full border border-slate-300 rounded-lg text-sm p-3 min-h-[100px] bg-white outline-none focus:border-blue-500"
+                      value={styleRemark}
+                      onChange={e => setStyleRemark(e.target.value)}
+                      placeholder="请输入款式备注..."
+                    />
+                  </div>
+
+                  <button
+                    onClick={() => {
+                      if (!styleImages[0]) {
+                        alert('请至少上传一张款式图片');
+                        return;
+                      }
+                      if (!styleShopName.trim()) {
+                        alert('请输入店铺名称');
+                        return;
+                      }
+                      const application = {
+                        shopName: styleShopName,
+                        images: [...styleImages],
+                        remark: styleRemark
+                      };
+                      setStyleApplicationList([...styleApplicationList, application]);
+                      setStyleImages([]);
+                      setStyleRemark('');
+                      alert('已添加到待提交列表');
+                    }}
+                    className="w-full py-2.5 bg-emerald-500 text-white rounded-xl text-xs font-bold shadow-md hover:bg-emerald-600"
+                  >
+                    添加到列表
+                  </button>
+                </div>
+
+                {styleApplicationList.length > 0 && (
+                  <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="text-xs font-bold text-slate-600">待提交款式列表</span>
+                      <span className="text-[10px] text-slate-400">{styleApplicationList.length} 个款式</span>
+                    </div>
+                    <div className="space-y-2 max-h-[200px] overflow-y-auto">
+                      {styleApplicationList.map((app, idx) => (
+                        <div key={idx} className="flex items-center gap-3 p-2 bg-slate-50 rounded-lg hover:bg-slate-100 transition-colors">
+                          <img src={app.images[0]} alt="款式" className="w-12 h-12 rounded object-cover" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-bold text-navy-700 truncate">{app.shopName}</p>
+                            <p className="text-[10px] text-slate-500 truncate">{app.remark || '无备注'}</p>
+                          </div>
+                          <button
+                            onClick={() => setStyleApplicationList(styleApplicationList.filter((_, i) => i !== idx))}
+                            className="material-symbols-outlined text-slate-300 hover:text-red-500 text-base"
+                          >
+                            delete
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
           <div className="p-5 border-t border-slate-200 bg-white flex gap-3 shrink-0 shadow-[0_-10px_30px_rgba(0,0,0,0.04)]"><button onClick={async () => {
             if (!pricingSubType && module === 'pricing') return alert('请先选择二级类目');
@@ -471,11 +637,23 @@ const RequestDrawer: React.FC<Props> = ({ onClose }) => {
                 } else if (pricingSubType === '申请涨价' && increaseList.length > 0) {
                   await createPriceIncreaseRequest(shopName, increaseList);
                 }
-              } else {
+              } else if (module === 'anomaly') {
                 const anomalyLabels: Record<string, string> = { size: '尺码问题', discontinue: '申请下架', image: '图片异常', bulk: '大货异常' };
                 const codes = targetCodes.split(/[\s\n]+/).filter(c => c.trim());
                 if (codes.length > 0) {
                   await createAnomalyRequest(anomalyLabels[anomalyType] || anomalyType, codes);
+                }
+              } else if (module === 'style') {
+                // 款式申请提交
+                if (styleApplicationList.length > 0) {
+                  const response = await fetch('/api/requests/style-application', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      applications: styleApplicationList
+                    })
+                  });
+                  if (!response.ok) throw new Error('款式申请提交失败');
                 }
               }
               // 直接关闭返回工作台，不显示成功页面

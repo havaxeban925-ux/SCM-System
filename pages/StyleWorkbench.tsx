@@ -127,6 +127,7 @@ const StyleWorkbench: React.FC<Props> = ({ availableStyles: propStyles, onConfir
   const handleExpressIntent = async (style: PublicStyle) => {
     const success = await expressIntent(style.id);
     if (success) {
+      alert('意向表达成功！');
       setPublicStyles(prev => prev.map(s =>
         s.id === style.id ? { ...s, intent_count: s.intent_count + 1 } : s
       ));

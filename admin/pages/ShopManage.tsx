@@ -39,6 +39,7 @@ const ShopManage: React.FC = () => {
         shop_id: '',
         shop_name: '',
         phone: '',
+        binding_account: '', // 新增关联账号字段
     });
 
     const [search, setSearch] = useState('');
@@ -61,6 +62,14 @@ const ShopManage: React.FC = () => {
     const [showDeleteModal, setShowDeleteModal] = useState(false);
     const [deleteReason, setDeleteReason] = useState('');
     const [shopToDelete, setShopToDelete] = useState<Shop | null>(null);
+
+    // Add Shop Modal State (for adding shop to existing KEY)
+    const [showAddShopModal, setShowAddShopModal] = useState(false);
+    const [addShopForm, setAddShopForm] = useState({
+        shopId: '',
+        shopName: '',
+        level: 'N' as Shop['level']
+    });
 
     // Sort State
     const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' }>({ key: 'level', direction: 'asc' });
@@ -309,14 +318,20 @@ const ShopManage: React.FC = () => {
                         keyId: formData.key_id,
                         level: formData.key_label,
                         shopId: formData.shop_id,
-                        phone: formData.phone
+                        phone: formData.phone,
+                        bindingAccount: formData.binding_account // 发送给后端
                     })
                 });
 
                 if (res.ok) {
-                    alert('添加成功');
+                    const data = await res.json();
+                    if (data.warning) {
+                        alert(data.warning);
+                    } else {
+                        alert('添加成功');
+                    }
                     setShowAddModal(false);
-                    setFormData({ key_id: '', key_label: 'N', shop_id: '', shop_name: '', phone: '' });
+                    setFormData({ key_id: '', key_label: 'N', shop_id: '', shop_name: '', phone: '', binding_account: '' });
                     loadAllShops();
                 } else {
                     const err = await res.json();
@@ -351,10 +366,28 @@ const ShopManage: React.FC = () => {
             alert('请填写删除原因');
             return;
         }
-        console.log('Submitting deletion ticket for', shopToDelete?.id, 'Reason:', deleteReason);
-        alert('删除工单已提交给买手审核');
-        setShowDeleteModal(false);
-        setShopToDelete(null);
+        if (!shopToDelete) return;
+
+        try {
+            const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+            const res = await fetch(`${baseUrl}/api/admin/shops/${shopToDelete.id}`, {
+                method: 'DELETE'
+            });
+
+            if (!res.ok) {
+                const err = await res.json();
+                alert(`删除失败: ${err.error || '未知错误'}`);
+                return;
+            }
+
+            alert('店铺删除成功');
+            setShowDeleteModal(false);
+            setShopToDelete(null);
+            closeDrawer();
+            loadAllShops();
+        } catch (err: any) {
+            alert(`操作失败: ${err.message}`);
+        }
     };
 
     const getDrawerShops = () => {
@@ -368,6 +401,93 @@ const ShopManage: React.FC = () => {
         if (file) {
             alert(`已选择文件: ${file.name}\n请联系管理员进行后台导入`);
         }
+    };
+
+    // Delete KEY handler
+    const handleDeleteKey = async () => {
+        if (!selectedGroup) return;
+
+        const confirmed = confirm(`确定要删除 KEY "${selectedGroup.key_id}" 吗？\n\n这将清空该商家的 key_id 字段。`);
+        if (!confirmed) return;
+
+        try {
+            const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+            // 使用第一个店铺的ID来代表这个KEY组
+            const shopId = selectedGroup.shops[0]?.id;
+            if (!shopId) {
+                alert('无法删除：未找到关联店铺');
+                return;
+            }
+
+            const res = await fetch(`${baseUrl}/api/admin/shops/${shopId}/key`, {
+                method: 'DELETE'
+            });
+
+            if (!res.ok) {
+                const err = await res.json();
+                alert(`删除失败: ${err.error || '未知错误'}`);
+                return;
+            }
+
+            alert('KEY 删除成功');
+            closeDrawer();
+            loadAllShops();
+        } catch (err: any) {
+            alert(`操作失败: ${err.message}`);
+        }
+    };
+
+    // Open add shop modal
+    const handleOpenAddShop = () => {
+        setAddShopForm({
+            shopId: '',
+            shopName: '',
+            level: selectedGroup?.level || 'N'
+        });
+        setShowAddShopModal(true);
+    };
+
+    // Submit add shop
+    const handleSubmitAddShop = async () => {
+        if (!selectedGroup || !addShopForm.shopName) {
+            alert('请填写店铺名称');
+            return;
+        }
+
+        try {
+            const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+            const res = await fetch(`${baseUrl}/api/admin/shops`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    shopName: addShopForm.shopName,
+                    keyId: selectedGroup.key_id,
+                    level: addShopForm.level,
+                    shopId: addShopForm.shopId
+                })
+            });
+
+            if (!res.ok) {
+                const err = await res.json();
+                alert(`添加失败: ${err.error || '未知错误'}`);
+                return;
+            }
+
+            alert('店铺添加成功');
+            setShowAddShopModal(false);
+            loadAllShops();
+        } catch (err: any) {
+            alert(`操作失败: ${err.message}`);
+        }
+    };
+
+    // Modified delete shop handler - ensure at least one shop remains
+    const handleDeleteShop = (shop: Shop) => {
+        if (selectedGroup && selectedGroup.shops.length <= 1) {
+            alert('无法删除：每个商家至少需要保留一个店铺');
+            return;
+        }
+        handleDeleteClick(shop);
     };
 
     return (
@@ -390,8 +510,8 @@ const ShopManage: React.FC = () => {
                         className={`tab ${activeTab === 'pending' ? 'active' : ''}`}
                         onClick={() => setActiveTab('pending')}
                     >
-                        新增商家（审批）
-                        {pendingRegistrations.filter(r => r.status === '待审批').length > 0 && (
+                        商家审批
+                        {pendingRegistrations.filter(r => r.status === 'pending').length > 0 && (
                             <span style={{
                                 marginLeft: 8,
                                 background: 'var(--danger)',
@@ -586,7 +706,17 @@ const ShopManage: React.FC = () => {
                             </div>
                             <div className="drawer-body">
                                 <div className="drawer-section">
-                                    <div className="drawer-section-title">店铺列表</div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                                        <div className="drawer-section-title">店铺列表</div>
+                                        <button
+                                            className="btn btn-sm btn-primary"
+                                            onClick={handleOpenAddShop}
+                                            style={{ padding: '4px 12px', fontSize: 12 }}
+                                        >
+                                            <span className="material-symbols-outlined" style={{ fontSize: 16 }}>add</span>
+                                            新增店铺
+                                        </button>
+                                    </div>
                                     <table className="data-table">
                                         <thead>
                                             <tr>
@@ -605,8 +735,16 @@ const ShopManage: React.FC = () => {
                                                     <td>
                                                         <button
                                                             className="btn btn-sm btn-danger"
-                                                            style={{ padding: '4px 8px', fontSize: 12, color: '#ef4444', borderColor: '#ef4444' }}
-                                                            onClick={() => handleDeleteClick(shop)}
+                                                            style={{
+                                                                padding: '4px 8px',
+                                                                fontSize: 12,
+                                                                color: '#ef4444',
+                                                                borderColor: '#ef4444',
+                                                                opacity: selectedGroup.shops.length <= 1 ? 0.5 : 1,
+                                                                cursor: selectedGroup.shops.length <= 1 ? 'not-allowed' : 'pointer'
+                                                            }}
+                                                            onClick={() => handleDeleteShop(shop)}
+                                                            disabled={selectedGroup.shops.length <= 1}
                                                         >
                                                             删除
                                                         </button>
@@ -654,6 +792,28 @@ const ShopManage: React.FC = () => {
                                             ))}
                                         </tbody>
                                     </table>
+                                </div>
+                                {/* 删除 KEY 按钮 - 放在底部 */}
+                                <div className="drawer-section" style={{ borderTop: '2px dashed var(--border-color)', paddingTop: 16 }}>
+                                    <button
+                                        className="btn btn-outline"
+                                        onClick={handleDeleteKey}
+                                        style={{
+                                            width: '100%',
+                                            color: '#ef4444',
+                                            borderColor: '#ef4444',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            gap: 8
+                                        }}
+                                    >
+                                        <span className="material-symbols-outlined">delete</span>
+                                        删除 KEY
+                                    </button>
+                                    <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 8, textAlign: 'center' }}>
+                                        删除后，该商家的 KEY 信息将被清空
+                                    </p>
                                 </div>
                             </div>
                         </>
@@ -709,6 +869,16 @@ const ShopManage: React.FC = () => {
                                     </div>
                                     <div className="form-group"><label className="form-label">店铺ID</label><input type="text" className="form-input" value={formData.shop_id} onChange={e => setFormData({ ...formData, shop_id: e.target.value })} /></div>
                                     <div className="form-group"><label className="form-label">店铺名称</label><input type="text" className="form-input" value={formData.shop_name} onChange={e => setFormData({ ...formData, shop_name: e.target.value })} /></div>
+                                    <div className="form-group">
+                                        <label className="form-label">关联账号 (Username) <span style={{ color: 'var(--text-muted)', fontSize: 12, fontWeight: 'normal' }}>(选填，绑定已有账号)</span></label>
+                                        <input
+                                            type="text"
+                                            className="form-input"
+                                            placeholder="例如 merchant_test"
+                                            value={formData.binding_account}
+                                            onChange={e => setFormData({ ...formData, binding_account: e.target.value })}
+                                        />
+                                    </div>
                                 </>
                             ) : (
                                 <div>
@@ -728,44 +898,40 @@ const ShopManage: React.FC = () => {
                 </div>
             )}
 
-            {/* APPROVE MODAL */}
-            {showApproveModal && (
-                <div className="modal-overlay" style={{ zIndex: 1200 }}>
-                    <div className="modal">
+            {/* ADD SHOP MODAL (for adding shop to existing KEY) */}
+            {showAddShopModal && (
+                <div className="modal-overlay" style={{ zIndex: 1150 }}>
+                    <div className="modal" style={{ width: 400 }}>
                         <div className="modal-header">
-                            <span className="modal-title">审批通过 - 录入商家信息</span>
+                            <span className="modal-title">新增店铺 - {selectedGroup?.key_id}</span>
                         </div>
                         <div className="modal-body">
-                            <p style={{ marginBottom: 16 }}>
-                                正在批准商家 <b>{approveForm.shop_name}</b> ({approveForm.username})。
-                                请补充以下信息以创建店铺：
-                            </p>
                             <div className="form-group">
-                                <label className="form-label">KEY <span style={{ color: 'red' }}>*</span></label>
+                                <label className="form-label">店铺名称 <span style={{ color: 'red' }}>*</span></label>
                                 <input
                                     type="text"
                                     className="form-input"
-                                    placeholder="例如 KEY-001"
-                                    value={approveForm.keyId}
-                                    onChange={e => setApproveForm({ ...approveForm, keyId: e.target.value })}
+                                    placeholder="输入店铺名称"
+                                    value={addShopForm.shopName}
+                                    onChange={e => setAddShopForm({ ...addShopForm, shopName: e.target.value })}
                                 />
                             </div>
                             <div className="form-group">
-                                <label className="form-label">店铺ID (ShopCode) <span style={{ color: 'red' }}>*</span></label>
+                                <label className="form-label">店铺ID <span style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 'normal' }}>(选填)</span></label>
                                 <input
                                     type="text"
                                     className="form-input"
-                                    placeholder="例如 SHOP-ABC"
-                                    value={approveForm.shopCode}
-                                    onChange={e => setApproveForm({ ...approveForm, shopCode: e.target.value })}
+                                    placeholder="选填"
+                                    value={addShopForm.shopId}
+                                    onChange={e => setAddShopForm({ ...addShopForm, shopId: e.target.value })}
                                 />
                             </div>
                             <div className="form-group">
-                                <label className="form-label">初始等级</label>
+                                <label className="form-label">等级</label>
                                 <select
                                     className="form-select"
-                                    value={approveForm.level}
-                                    onChange={e => setApproveForm({ ...approveForm, level: e.target.value as any })}
+                                    value={addShopForm.level}
+                                    onChange={e => setAddShopForm({ ...addShopForm, level: e.target.value as Shop['level'] })}
                                 >
                                     <option value="S">S (破万)</option>
                                     <option value="A">A (破五千)</option>
@@ -776,13 +942,70 @@ const ShopManage: React.FC = () => {
                             </div>
                         </div>
                         <div className="modal-footer">
-                            <button className="btn btn-outline" onClick={() => setShowApproveModal(false)}>取消</button>
-                            <button className="btn btn-success" onClick={handleConfirmApprove}>确认通过</button>
+                            <button className="btn btn-outline" onClick={() => setShowAddShopModal(false)}>取消</button>
+                            <button className="btn btn-primary" onClick={handleSubmitAddShop}>确认添加</button>
                         </div>
                     </div>
                 </div>
             )}
-        </div>
+
+            {/* APPROVE MODAL */}
+            {
+                showApproveModal && (
+                    <div className="modal-overlay" style={{ zIndex: 1200 }}>
+                        <div className="modal">
+                            <div className="modal-header">
+                                <span className="modal-title">审批通过 - 录入商家信息</span>
+                            </div>
+                            <div className="modal-body">
+                                <p style={{ marginBottom: 16 }}>
+                                    正在批准商家 <b>{approveForm.shop_name}</b> ({approveForm.username})。
+                                    请补充以下信息以创建店铺：
+                                </p>
+                                <div className="form-group">
+                                    <label className="form-label">KEY <span style={{ color: 'red' }}>*</span></label>
+                                    <input
+                                        type="text"
+                                        className="form-input"
+                                        placeholder="例如 KEY-001"
+                                        value={approveForm.keyId}
+                                        onChange={e => setApproveForm({ ...approveForm, keyId: e.target.value })}
+                                    />
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">店铺ID (ShopCode) <span style={{ color: 'red' }}>*</span></label>
+                                    <input
+                                        type="text"
+                                        className="form-input"
+                                        placeholder="例如 SHOP-ABC"
+                                        value={approveForm.shopCode}
+                                        onChange={e => setApproveForm({ ...approveForm, shopCode: e.target.value })}
+                                    />
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">初始等级</label>
+                                    <select
+                                        className="form-select"
+                                        value={approveForm.level}
+                                        onChange={e => setApproveForm({ ...approveForm, level: e.target.value as any })}
+                                    >
+                                        <option value="S">S (破万)</option>
+                                        <option value="A">A (破五千)</option>
+                                        <option value="B">B (破千)</option>
+                                        <option value="C">C (破百)</option>
+                                        <option value="N">N (无动销)</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div className="modal-footer">
+                                <button className="btn btn-outline" onClick={() => setShowApproveModal(false)}>取消</button>
+                                <button className="btn btn-success" onClick={handleConfirmApprove}>确认通过</button>
+                            </div>
+                        </div>
+                    </div>
+                )
+            }
+        </div >
     );
 };
 

@@ -56,21 +56,21 @@ router.post('/quote', async (req, res) => {
     if (recordError) return res.status(500).json({ error: recordError.message });
 
     // 创建关联的报价工单
-    for (const quote of quotes) {
-        await supabase
-            .from('b_quote_order')
-            .insert({
-                request_id: record.id,
-                quote_no: generateNo('QT'),
-                shop_name: shopName,
-                type: quote.type,
-                skc_code: quote.type === 'NORMAL' ? quote.code : undefined,
-                style_no: quote.type === 'WOOL' ? quote.code : undefined,
-                total_price: quote.price,
-                status: 0,
-                detail_json: quote.detailJson
-            });
-    }
+    // for (const quote of quotes) {
+    //     await supabase
+    //         .from('b_quote_order')
+    //         .insert({
+    //             request_id: record.id,
+    //             quote_no: generateNo('QT'),
+    //             shop_name: shopName,
+    //             type: quote.type,
+    //             skc_code: quote.type === 'NORMAL' ? quote.code : undefined,
+    //             style_no: quote.type === 'WOOL' ? quote.code : undefined,
+    //             total_price: quote.price,
+    //             status: 0,
+    //             // detail_json: quote.detailJson // Column likely missing
+    //         });
+    // }
 
     res.json(record);
 });
@@ -132,7 +132,7 @@ router.post('/price-increase', async (req, res) => {
 
 // POST /api/requests/anomaly - 创建异常申请
 router.post('/anomaly', async (req, res) => {
-    const { subType, targetCodes, content } = req.body;
+    const { subType, targetCodes, content, shopName } = req.body;
 
     const { data, error } = await supabase
         .from('b_request_record')
@@ -141,13 +141,53 @@ router.post('/anomaly', async (req, res) => {
             sub_type: subType,
             target_codes: targetCodes,
             status: 'processing',
-            remark: content || null
+            shop_name: shopName,
+            remark: content?.remark || content || null
         })
         .select()
         .single();
 
     if (error) return res.status(500).json({ error: error.message });
     res.json(data);
+});
+
+// POST /api/requests/style-application - 创建款式申请
+router.post('/style-application', async (req, res) => {
+    const { applications } = req.body;
+
+    if (!applications || applications.length === 0) {
+        return res.status(400).json({ error: '没有款式申请数据' });
+    }
+
+    // 为每个款式申请创建一条记录
+    const records = [];
+    for (const app of applications) {
+        const { data, error } = await supabase
+            .from('b_request_record')
+            .insert({
+                type: 'style',
+                sub_type: '申请发款',
+                target_codes: [app.shopName], // 使用店铺名称作为标识
+                status: 'processing',
+                shop_name: app.shopName,
+                pricing_details: [{
+                    images: app.images,
+                    remark: app.remark || '',
+                    status: '待审核',
+                    time: new Date().toISOString().split('T')[0]
+                }]
+            })
+            .select()
+            .single();
+
+        if (error) {
+            console.error('Style application insert error:', error);
+            return res.status(500).json({ error: error.message });
+        }
+        records.push(data);
+    }
+
+    res.json({ success: true, records });
 });
 
 // POST /api/requests/:id/secondary-review - 二次核价
@@ -210,31 +250,35 @@ router.post('/:id/audit', async (req, res) => {
     // feedback: 驳回原因
     // buyerPrices: 核价时的买手价格 { skc: price }
 
-    const newStatus = action === 'approve' ? 'approved' : 'rejected';
+    const newStatus = action === 'approve' ? 'completed' : 'rejected';
     const updates: any = {
         status: newStatus,
         updated_at: new Date().toISOString()
     };
 
-    if (feedback) updates.remark = feedback;
+    // feedback 存入 pricing_details 的 JSON 中，因为 remark 字段不存在
 
-    // 如果是核价审批且有买手价格
-    if (buyerPrices) {
-        const { data: record } = await supabase
-            .from('b_request_record')
-            .select('pricing_details')
-            .eq('id', id)
-            .single();
 
-        if (record?.pricing_details) {
-            const details = record.pricing_details as any[];
-            updates.pricing_details = details.map(d => ({
-                ...d,
-                buyerPrice: buyerPrices[d.skc] ?? d.buyerPrice,
-                status: action === 'approve' ? '已通过' : '已驳回'
-            }));
-        }
+    // 获取当前记录并更新 pricing_details（含 feedback）
+    const { data: record } = await supabase
+        .from('b_request_record')
+        .select('pricing_details')
+        .eq('id', id)
+        .single();
+
+    if (record?.pricing_details) {
+        const details = record.pricing_details as any[];
+        updates.pricing_details = details.map(d => ({
+            ...d,
+            buyerPrice: buyerPrices?.[d.skc] ?? d.buyerPrice,
+            status: action === 'approve' ? '已通过' : '已驳回',
+            feedback: feedback || d.feedback
+        }));
+    } else if (feedback) {
+        // 如果没有 pricing_details，创建一个包含 feedback 的对象
+        updates.pricing_details = [{ feedback }];
     }
+
 
     const { error } = await supabase
         .from('b_request_record')

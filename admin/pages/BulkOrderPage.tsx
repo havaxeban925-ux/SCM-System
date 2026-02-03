@@ -47,9 +47,14 @@ const BulkOrderPage: React.FC = () => {
     }, []);
 
     const [filter, setFilter] = useState<'all' | '申请样衣' | '样衣来回' | '付款确认' | '尾款结算' | '物流跟踪'>('all');
+    const [statusFilter, setStatusFilter] = useState<'all' | '待处理' | '进行中' | '已完成'>('all');
     const [detailModal, setDetailModal] = useState<{ show: boolean; order: BulkOrder | null }>({ show: false, order: null });
 
-    const filteredOrders = orders.filter(o => filter === 'all' || o.sub_type === filter);
+    const filteredOrders = orders.filter(o => {
+        const typeMatch = filter === 'all' || o.sub_type === filter;
+        const statusMatch = statusFilter === 'all' || o.status === statusFilter;
+        return typeMatch && statusMatch;
+    });
 
     const handleProcess = (id: string) => {
         setOrders(orders.map(o => o.id === id ? { ...o, status: '进行中' as const } : o));
@@ -91,26 +96,38 @@ const BulkOrderPage: React.FC = () => {
             </div>
 
             <div className="card">
-                <div className="filter-bar">
-                    <div className="tabs">
-                        <button className={`tab ${filter === 'all' ? 'active' : ''}`} onClick={() => setFilter('all')}>
-                            全部 ({orders.length})
-                        </button>
-                        <button className={`tab ${filter === '申请样衣' ? 'active' : ''}`} onClick={() => setFilter('申请样衣')}>
-                            申请样衣
-                        </button>
-                        <button className={`tab ${filter === '样衣来回' ? 'active' : ''}`} onClick={() => setFilter('样衣来回')}>
-                            样衣来回
-                        </button>
-                        <button className={`tab ${filter === '付款确认' ? 'active' : ''}`} onClick={() => setFilter('付款确认')}>
-                            付款确认
-                        </button>
-                        <button className={`tab ${filter === '尾款结算' ? 'active' : ''}`} onClick={() => setFilter('尾款结算')}>
-                            尾款结算
-                        </button>
-                        <button className={`tab ${filter === '物流跟踪' ? 'active' : ''}`} onClick={() => setFilter('物流跟踪')}>
-                            物流跟踪
-                        </button>
+                <div className="filter-bar" style={{ flexWrap: 'wrap', gap: 16 }}>
+                    <div>
+                        <span style={{ fontSize: 12, color: 'var(--text-muted)', marginRight: 8 }}>类型:</span>
+                        <div className="tabs" style={{ display: 'inline-flex' }}>
+                            <button className={`tab ${filter === 'all' ? 'active' : ''}`} onClick={() => setFilter('all')}>
+                                全部
+                            </button>
+                            <button className={`tab ${filter === '申请样衣' ? 'active' : ''}`} onClick={() => setFilter('申请样衣')}>
+                                申请样衣
+                            </button>
+                            <button className={`tab ${filter === '样衣来回' ? 'active' : ''}`} onClick={() => setFilter('样衣来回')}>
+                                样衣来回
+                            </button>
+                            <button className={`tab ${filter === '付款确认' ? 'active' : ''}`} onClick={() => setFilter('付款确认')}>
+                                付款确认
+                            </button>
+                            <button className={`tab ${filter === '尾款结算' ? 'active' : ''}`} onClick={() => setFilter('尾款结算')}>
+                                尾款结算
+                            </button>
+                            <button className={`tab ${filter === '物流跟踪' ? 'active' : ''}`} onClick={() => setFilter('物流跟踪')}>
+                                物流跟踪
+                            </button>
+                        </div>
+                    </div>
+                    <div>
+                        <span style={{ fontSize: 12, color: 'var(--text-muted)', marginRight: 8 }}>状态:</span>
+                        <div className="tabs" style={{ display: 'inline-flex' }}>
+                            <button className={`tab ${statusFilter === 'all' ? 'active' : ''}`} onClick={() => setStatusFilter('all')}>全部</button>
+                            <button className={`tab ${statusFilter === '待处理' ? 'active' : ''}`} onClick={() => setStatusFilter('待处理')}>待处理</button>
+                            <button className={`tab ${statusFilter === '进行中' ? 'active' : ''}`} onClick={() => setStatusFilter('进行中')}>进行中</button>
+                            <button className={`tab ${statusFilter === '已完成' ? 'active' : ''}`} onClick={() => setStatusFilter('已完成')}>已完成</button>
+                        </div>
                     </div>
                 </div>
 

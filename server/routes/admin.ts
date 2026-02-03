@@ -160,22 +160,45 @@ router.get('/shops', async (req, res) => {
 
 // POST /api/admin/shops - 创建商铺
 router.post('/shops', async (req, res) => {
-    const { shopName, keyId, level, phone, shopId } = req.body;
+    const { shopName, keyId, level, phone, bindingAccount } = req.body;
 
-    const { data, error } = await supabase
+    const { data: newShop, error } = await supabase
         .from('sys_shop')
         .insert({
             shop_name: shopName,
             key_id: keyId,
             level: level || 'N',
             phone: phone,
-            // 如果提供了 shopId (前端传来的店铺ID)，可以用作 UUID 的一部分或存入备注，这里简化直接用 UUID
         })
         .select()
         .single();
 
     if (error) return res.status(500).json({ error: error.message });
-    res.json(data);
+
+    // 如果提供了关联账号，尝试绑定
+    if (bindingAccount && bindingAccount.trim()) {
+        const username = bindingAccount.trim();
+
+        const { data: updatedUsers, error: userUpdateError } = await supabase
+            .from('sys_user')
+            .update({
+                shop_name: shopName,
+                status: 'approved',
+                updated_at: new Date().toISOString()
+            })
+            .eq('username', username)
+            .select();
+
+        if (userUpdateError) {
+            return res.json({ ...newShop, warning: `商家创建成功，但账号绑定失败: ${userUpdateError.message}` });
+        }
+
+        if (!updatedUsers || updatedUsers.length === 0) {
+            return res.json({ ...newShop, warning: '商家创建成功，但未找到对应的账号进行绑定，请检查账号是否拼写正确' });
+        }
+    }
+
+    res.json(newShop);
 });
 
 // PATCH /api/admin/shops/:id - 更新商铺
@@ -209,6 +232,32 @@ router.delete('/shops/:id', async (req, res) => {
 
     if (error) return res.status(500).json({ error: error.message });
     res.json({ success: true });
+});
+
+// DELETE /api/admin/shops/:id/key - 删除商家的KEY（清空key_id字段）
+router.delete('/shops/:id/key', async (req, res) => {
+    const { id } = req.params;
+
+    // 获取该店铺的key_id，找到所有相同的key_id的店铺
+    const { data: shop, error: fetchError } = await supabase
+        .from('sys_shop')
+        .select('key_id')
+        .eq('id', id)
+        .single();
+
+    if (fetchError) return res.status(500).json({ error: fetchError.message });
+    if (!shop || !shop.key_id) return res.status(400).json({ error: 'Shop has no KEY to delete' });
+
+    const keyId = shop.key_id;
+
+    // 清空所有拥有相同 key_id 的店铺的 key_id 字段
+    const { error: updateError } = await supabase
+        .from('sys_shop')
+        .update({ key_id: null, updated_at: new Date().toISOString() })
+        .eq('key_id', keyId);
+
+    if (updateError) return res.status(500).json({ error: updateError.message });
+    res.json({ success: true, message: `Cleared KEY "${keyId}" from all shops` });
 });
 
 // ============ 标签管理 ============
@@ -284,6 +333,9 @@ router.delete('/tags/:id', async (req, res) => {
 // POST /api/admin/push/private - 私推
 // POST /api/admin/push/private - 私推
 router.post('/push/private', async (req, res) => {
+    // OPT-1: 获取当前买手身份
+    const buyerName = req.headers['x-buyer-name'] as string || 'Unknown';
+
     // 支持两种模式：
     // 1. 批量推送不同款式: { styles: [{ shopId, name, imageUrl, ... }] }
     // 2. 单款推送多店: { shopIds: [], name, imageUrl, ... }
@@ -302,10 +354,11 @@ router.post('/push/private', async (req, res) => {
             days_left: s.deadline || 3,
             status: 'new',
             timestamp_label: '刚刚',
-            created_at: new Date().toISOString()
+            created_at: new Date().toISOString(),
+            created_by: buyerName
         }));
     } else {
-        const { shopIds, imageUrl, name, remark, deadline } = req.body;
+        const { shopIds, imageUrl, name, remark, deadline, tags } = req.body;
         if (!shopIds || !Array.isArray(shopIds)) {
             return res.status(400).json({ error: 'Invalid payload: shopIds or styles required' });
         }
@@ -315,15 +368,16 @@ router.post('/push/private', async (req, res) => {
             image_url: imageUrl,
             name,
             remark,
-            tags,
+            tags: tags || [],
             days_left: deadline || 3,
             status: 'new',
             timestamp_label: '刚刚',
-            created_at: new Date().toISOString()
+            created_at: new Date().toISOString(),
+            created_by: buyerName
         }));
     }
 
-    console.log('Inserting styles payload:', JSON.stringify(stylesToInsert, null, 2));
+    // 前端传deadline（天数），后端存储为days_left字段
 
     const { data, error } = await supabase
         .from('b_style_demand')
@@ -336,6 +390,8 @@ router.post('/push/private', async (req, res) => {
 
 // POST /api/admin/push/public - 公推
 router.post('/push/public', async (req, res) => {
+    // OPT-1: 获取当前买手身份
+    const buyerName = req.headers['x-buyer-name'] as string || 'Unknown';
     const { imageUrl, name, remark, tags, maxIntents } = req.body;
 
     const { data, error } = await supabase
@@ -345,7 +401,8 @@ router.post('/push/public', async (req, res) => {
             name,
             tags,
             max_intents: maxIntents || 5,
-            intent_count: 0
+            intent_count: 0,
+            created_by: buyerName
         })
         .select()
         .single();
@@ -522,6 +579,143 @@ router.delete('/system/cleanup', async (req, res) => {
         res.json({ success: true, message: 'All order data cleared' });
     } catch (err: any) {
         console.error('System Cleanup Error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ============ OPT-3: 商家删除审批 ============
+
+// GET /api/admin/shops/delete-requests - 获取删除申请列表
+router.get('/shops/delete-requests', async (req, res) => {
+    try {
+        const { data, error } = await supabase
+            .from('shop_delete_requests')
+            .select('*')
+            .eq('status', 'pending')
+            .order('requested_at', { ascending: false });
+
+        if (error) throw error;
+        res.json({ requests: data || [] });
+    } catch (err: any) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// POST /api/admin/shops/delete-requests/:id/approve - 批准删除（级联物理删除）
+router.post('/shops/delete-requests/:id/approve', async (req, res) => {
+    const { id } = req.params;
+    const buyerName = req.headers['x-buyer-name'] as string || 'Unknown';
+
+    try {
+        // 1. 获取删除申请详情
+        const { data: request, error: reqError } = await supabase
+            .from('shop_delete_requests')
+            .select('shop_id, shop_name')
+            .eq('id', id)
+            .single();
+
+        if (reqError || !request) {
+            return res.status(404).json({ error: 'Delete request not found' });
+        }
+
+        const shopId = request.shop_id;
+        const shopName = request.shop_name;
+
+        // 2. 级联删除所有关联数据（注意顺序：子表 -> 父表）
+        // 2.1 删除物流记录（b_restock_logistics.operator_id 引用 sys_shop）
+        const { error: logisticsError } = await supabase
+            .from('b_restock_logistics')
+            .delete()
+            .eq('operator_id', shopId);
+        if (logisticsError) {
+            console.error('Failed to delete logistics:', logisticsError);
+            throw new Error(`Failed to delete logistics: ${logisticsError.message}`);
+        }
+
+        // 2.2 删除款式需求
+        const { error: styleError } = await supabase
+            .from('b_style_demand')
+            .delete()
+            .eq('shop_id', shopId);
+        if (styleError) {
+            console.error('Failed to delete styles:', styleError);
+            throw new Error(`Failed to delete styles: ${styleError.message}`);
+        }
+
+        // 2.3 删除补货订单
+        const { error: restockError } = await supabase
+            .from('b_restock_order')
+            .delete()
+            .eq('shop_id', shopId);
+        if (restockError) {
+            console.error('Failed to delete restock orders:', restockError);
+            throw new Error(`Failed to delete restock orders: ${restockError.message}`);
+        }
+
+        // 2.4 删除申请记录
+        const { error: requestError } = await supabase
+            .from('b_request_record')
+            .delete()
+            .eq('shop_name', shopName);
+        if (requestError) {
+            console.error('Failed to delete request records:', requestError);
+            throw new Error(`Failed to delete request records: ${requestError.message}`);
+        }
+
+        // 2.5 删除用户
+        const { error: userError } = await supabase
+            .from('sys_user')
+            .delete()
+            .eq('shop_name', shopName);
+        if (userError) {
+            console.error('Failed to delete users:', userError);
+            throw new Error(`Failed to delete users: ${userError.message}`);
+        }
+
+        // 3. 更新删除申请状态（必须在删除 shop 之前，因为 shop_delete_requests.shop_id 引用 sys_shop）
+        // 先置空 shop_id 以解除外键约束
+        const { error: updateError } = await supabase.from('shop_delete_requests').update({
+            shop_id: null,
+            status: 'approved',
+            processed_by: buyerName,
+            processed_at: new Date().toISOString()
+        }).eq('id', id);
+        if (updateError) throw new Error(`Failed to update delete request: ${updateError.message}`);
+
+        // 2.6 删除商铺本身
+        const { error: shopError } = await supabase
+            .from('sys_shop')
+            .delete()
+            .eq('id', shopId);
+        if (shopError) {
+            console.error('Failed to delete shop:', shopError);
+            // 如果删除失败，可能需要回滚申请状态（此处暂不处理复杂回滚，主要确保顺序正确）
+            throw new Error(`Failed to delete shop: ${shopError.message}`);
+        }
+
+        res.json({ success: true, message: 'Shop deleted successfully' });
+    } catch (err: any) {
+        console.error('Delete shop error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// POST /api/admin/shops/delete-requests/:id/reject - 驳回删除申请
+router.post('/shops/delete-requests/:id/reject', async (req, res) => {
+    const { id } = req.params;
+    const { reason } = req.body;
+    const buyerName = req.headers['x-buyer-name'] as string || 'Unknown';
+
+    try {
+        await supabase.from('shop_delete_requests').update({
+            status: 'rejected',
+            reject_reason: reason,
+            processed_by: buyerName,
+            processed_at: new Date().toISOString()
+        }).eq('id', id);
+
+        res.json({ success: true });
+    } catch (err: any) {
         res.status(500).json({ error: err.message });
     }
 });

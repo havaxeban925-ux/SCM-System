@@ -32,6 +32,7 @@ const PushHistory: React.FC = () => {
     const [detailModal, setDetailModal] = useState<{ show: boolean; record: PushRecord | null }>({ show: false, record: null });
     const [addPrivateModal, setAddPrivateModal] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
+    const [recordSearchTerm, setRecordSearchTerm] = useState(''); // OPT-9: 用于搜索推款记录
     const [selectedShops, setSelectedShops] = useState<string[]>([]);
 
     useEffect(() => {
@@ -96,7 +97,14 @@ const PushHistory: React.FC = () => {
         fetchData();
     }, []);
 
-    const filteredRecords = records.filter(r => filter === 'all' || r.push_type === filter);
+    // OPT-9: 添加记录搜索过滤
+    const filteredRecords = records.filter(r => {
+        const typeMatch = filter === 'all' || r.push_type === filter;
+        const searchMatch = recordSearchTerm === '' ||
+            r.style_name.toLowerCase().includes(recordSearchTerm.toLowerCase()) ||
+            r.shops.some(s => s.name.toLowerCase().includes(recordSearchTerm.toLowerCase()));
+        return typeMatch && searchMatch;
+    });
     const filteredShops = shops.filter(s =>
         s.shop_name.toLowerCase().includes(searchTerm.toLowerCase())
     );
@@ -147,11 +155,30 @@ const PushHistory: React.FC = () => {
             </div>
 
             <div className="card">
-                <div className="filter-bar">
+                <div className="filter-bar" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div className="tabs">
                         <button className={`tab ${filter === 'all' ? 'active' : ''}`} onClick={() => setFilter('all')}>全部</button>
                         <button className={`tab ${filter === 'private' ? 'active' : ''}`} onClick={() => setFilter('private')}>私推</button>
                         <button className={`tab ${filter === 'public' ? 'active' : ''}`} onClick={() => setFilter('public')}>公池</button>
+                    </div>
+                    {/* OPT-9: 搜索框 */}
+                    <div className="search-box" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span className="material-symbols-outlined" style={{ color: 'var(--text-muted)' }}>search</span>
+                        <input
+                            type="text"
+                            placeholder="搜索款式名/商家..."
+                            value={recordSearchTerm}
+                            onChange={(e) => setRecordSearchTerm(e.target.value)}
+                            style={{ border: '1px solid var(--border-color)', borderRadius: 4, padding: '6px 10px', fontSize: 13 }}
+                        />
+                        {recordSearchTerm && (
+                            <button
+                                onClick={() => setRecordSearchTerm('')}
+                                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}
+                            >
+                                ✕
+                            </button>
+                        )}
                     </div>
                 </div>
 

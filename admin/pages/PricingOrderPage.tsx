@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import ExcelJS from 'exceljs';
+import { saveAs } from 'file-saver';
 
 interface PricingOrder {
     id: string;
@@ -48,12 +50,17 @@ const PricingOrderPage: React.FC = () => {
         fetchOrders();
     }, []);
 
-    const [filter, setFilter] = useState<'all' | '未处理' | '处理中' | '已处理' | '待复核'>('all');
+    const [statusFilter, setStatusFilter] = useState<'all' | '未处理' | '处理中' | '已处理' | '待复核'>('all');
+    const [typeFilter, setTypeFilter] = useState<'all' | '同款同价' | '申请涨价' | '毛织类核价' | '非毛织类核价'>('all');
     const [detailModal, setDetailModal] = useState<{ show: boolean; order: PricingOrder | null }>({ show: false, order: null });
     const [reviewModal, setReviewModal] = useState<{ show: boolean; order: PricingOrder | null }>({ show: false, order: null });
     const [reviewPrice, setReviewPrice] = useState('');
 
-    const filteredOrders = orders.filter(o => filter === 'all' || o.status === filter);
+    const filteredOrders = orders.filter(o => {
+        const statusMatch = statusFilter === 'all' || o.status === statusFilter;
+        const typeMatch = typeFilter === 'all' || o.sub_type === typeFilter;
+        return statusMatch && typeMatch;
+    });
 
     // 点击处理 -> 状态变为处理中
     const handleProcess = (id: string) => {
@@ -92,26 +99,64 @@ const PricingOrderPage: React.FC = () => {
         alert('已驳回');
     };
 
-    // 一键导出未处理工单
-    const handleExport = () => {
-        const pending = orders.filter(o => o.status === '未处理');
+    // OPT-2: 一键导出未处理工单为Excel
+    const handleExport = async () => {
+        const pending = orders.filter(o => o.status === '未处理' || o.status === '处理中');
         if (pending.length === 0) {
-            alert('没有未处理的工单');
+            alert('没有待处理的工单');
             return;
         }
-        // 模拟导出
-        const data = pending.map(o => ({
-            id: o.id,
-            shop_name: o.shop_name,
-            sub_type: o.sub_type,
-            skc_codes: o.skc_codes.join(' '),
-            applied_price: o.applied_price
-        }));
-        console.log('导出数据:', data);
 
-        // 导出后状态变为处理中
-        setOrders(orders.map(o => o.status === '未处理' ? { ...o, status: '处理中' as const } : o));
-        alert(`已导出 ${pending.length} 个工单，状态已变为"处理中"`);
+        try {
+            const workbook = new ExcelJS.Workbook();
+            const worksheet = workbook.addWorksheet('核价工单');
+
+            // 设置列
+            worksheet.columns = [
+                { header: '工单ID', key: 'id', width: 40 },
+                { header: '店铺名称', key: 'shop_name', width: 20 },
+                { header: '工单类型', key: 'sub_type', width: 15 },
+                { header: 'SKC编码', key: 'skc_codes', width: 30 },
+                { header: '申请价格', key: 'applied_price', width: 12 },
+                { header: '核价结果', key: 'result_price', width: 12 },  // 留空给核价师填
+                { header: '备注', key: 'remark', width: 30 },  // 留空给核价师填
+                { header: '提交时间', key: 'submit_time', width: 20 },
+            ];
+
+            // 设置表头样式
+            worksheet.getRow(1).eachCell((cell) => {
+                cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4F81BD' } };
+                cell.font = { color: { argb: 'FFFFFFFF' }, bold: true };
+                cell.alignment = { horizontal: 'center' };
+            });
+
+            // 添加数据行
+            pending.forEach(order => {
+                worksheet.addRow({
+                    id: order.id,
+                    shop_name: order.shop_name,
+                    sub_type: order.sub_type,
+                    skc_codes: order.skc_codes.join(', '),
+                    applied_price: order.applied_price || '',
+                    result_price: '', // 留空给核价师填
+                    remark: '', // 留空给核价师填
+                    submit_time: order.submit_time,
+                });
+            });
+
+            // 导出
+            const buffer = await workbook.xlsx.writeBuffer();
+            const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+            const date = new Date().toISOString().slice(0, 10);
+            saveAs(blob, `核价工单-${date}.xlsx`);
+
+            // 导出后状态变为处理中
+            setOrders(orders.map(o => o.status === '未处理' ? { ...o, status: '处理中' as const } : o));
+            alert(`已导出 ${pending.length} 个工单，状态已变为"处理中"`);
+        } catch (error) {
+            console.error('Export error:', error);
+            alert('导出失败，请重试');
+        }
     };
 
     // 一键导入核价师结果
@@ -167,23 +212,26 @@ const PricingOrderPage: React.FC = () => {
                     </button>
                 </div>
 
-                <div className="filter-bar">
-                    <div className="tabs">
-                        <button className={`tab ${filter === 'all' ? 'active' : ''}`} onClick={() => setFilter('all')}>
-                            全部 ({orders.length})
-                        </button>
-                        <button className={`tab ${filter === '未处理' ? 'active' : ''}`} onClick={() => setFilter('未处理')}>
-                            未处理 ({orders.filter(o => o.status === '未处理').length})
-                        </button>
-                        <button className={`tab ${filter === '处理中' ? 'active' : ''}`} onClick={() => setFilter('处理中')}>
-                            处理中 ({orders.filter(o => o.status === '处理中').length})
-                        </button>
-                        <button className={`tab ${filter === '待复核' ? 'active' : ''}`} onClick={() => setFilter('待复核')}>
-                            待复核 ({orders.filter(o => o.status === '待复核').length})
-                        </button>
-                        <button className={`tab ${filter === '已处理' ? 'active' : ''}`} onClick={() => setFilter('已处理')}>
-                            已处理 ({orders.filter(o => o.status === '已处理').length})
-                        </button>
+                <div className="filter-bar" style={{ flexWrap: 'wrap', gap: 16 }}>
+                    <div>
+                        <span style={{ fontSize: 12, color: 'var(--text-muted)', marginRight: 8 }}>类型:</span>
+                        <div className="tabs" style={{ display: 'inline-flex' }}>
+                            <button className={`tab ${typeFilter === 'all' ? 'active' : ''}`} onClick={() => setTypeFilter('all')}>全部</button>
+                            <button className={`tab ${typeFilter === '同款同价' ? 'active' : ''}`} onClick={() => setTypeFilter('同款同价')}>同款同价</button>
+                            <button className={`tab ${typeFilter === '申请涨价' ? 'active' : ''}`} onClick={() => setTypeFilter('申请涨价')}>申请涨价</button>
+                            <button className={`tab ${typeFilter === '毛织类核价' ? 'active' : ''}`} onClick={() => setTypeFilter('毛织类核价')}>毛织类核价</button>
+                            <button className={`tab ${typeFilter === '非毛织类核价' ? 'active' : ''}`} onClick={() => setTypeFilter('非毛织类核价')}>非毛织类核价</button>
+                        </div>
+                    </div>
+                    <div>
+                        <span style={{ fontSize: 12, color: 'var(--text-muted)', marginRight: 8 }}>状态:</span>
+                        <div className="tabs" style={{ display: 'inline-flex' }}>
+                            <button className={`tab ${statusFilter === 'all' ? 'active' : ''}`} onClick={() => setStatusFilter('all')}>全部</button>
+                            <button className={`tab ${statusFilter === '未处理' ? 'active' : ''}`} onClick={() => setStatusFilter('未处理')}>未处理</button>
+                            <button className={`tab ${statusFilter === '处理中' ? 'active' : ''}`} onClick={() => setStatusFilter('处理中')}>处理中</button>
+                            <button className={`tab ${statusFilter === '待复核' ? 'active' : ''}`} onClick={() => setStatusFilter('待复核')}>待复核</button>
+                            <button className={`tab ${statusFilter === '已处理' ? 'active' : ''}`} onClick={() => setStatusFilter('已处理')}>已处理</button>
+                        </div>
                     </div>
                 </div>
 

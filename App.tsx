@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AppView, StyleItem } from './types';
 import StyleWorkbench from './pages/StyleWorkbench';
 import { getQuotaStats } from './services/styleService';
@@ -273,6 +273,58 @@ const App: React.FC = () => {
     }
   };
 
+  // OPT-4: 浏览器通知轮询
+  useEffect(() => {
+    if (!currentUser || currentUser.status !== 'approved') return;
+
+    let lastCheckTime = Date.now();
+
+    const checkUpdates = async () => {
+      try {
+        const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+        const shopName = currentUser.shop_name || '';
+        const res = await fetch(
+          `${API_BASE}/api/notifications?shop_name=${encodeURIComponent(shopName)}&since=${lastCheckTime}`
+        );
+        const data = await res.json();
+
+        if (data.updates && data.updates.length > 0) {
+          data.updates.forEach((update: any) => {
+            // 浏览器通知
+            if ('Notification' in window && Notification.permission === 'granted') {
+              new Notification(update.title, { body: update.message });
+            }
+            // 更新UI消息列表
+            setMessages(prev => [{
+              id: Date.now().toString(),
+              title: update.title,
+              content: update.message,
+              time: '刚刚',
+              read: false,
+              targetView: AppView.STYLE_WORKBENCH
+            }, ...prev]);
+          });
+          lastCheckTime = Date.now();
+        }
+      } catch (error) {
+        console.error('通知轮询失败:', error);
+      }
+    };
+
+    // 请求通知权限
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+
+    // 每分钟轮询
+    const interval = setInterval(checkUpdates, 60000);
+
+    // 初次检查
+    checkUpdates();
+
+    return () => clearInterval(interval);
+  }, [currentUser]);
+
   const handleConfirmStyle = (style: StyleItem) => {
     setAvailableStyles(prev => prev.filter(s => s.id !== style.id));
     setStylesInDevelopment(prev => [
@@ -355,6 +407,14 @@ const App: React.FC = () => {
         </div>
         <div className="flex items-center gap-6">
           <div className="flex items-center gap-4 border-l border-white/20 pl-6">
+            {/* 刷新按钮 */}
+            <button
+              onClick={() => window.location.reload()}
+              className="flex items-center gap-1 px-3 py-1.5 rounded bg-white/10 hover:bg-white/20 text-white text-sm font-medium transition-colors"
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: 18 }}>refresh</span>
+              刷新
+            </button>
             {/* 消息通知小铃铛 */}
             <div className="relative">
               <button
