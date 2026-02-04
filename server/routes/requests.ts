@@ -132,7 +132,7 @@ router.post('/price-increase', async (req, res) => {
 
 // POST /api/requests/anomaly - 创建异常申请
 router.post('/anomaly', async (req, res) => {
-    const { subType, targetCodes, content, shopName } = req.body;
+    const { subType, targetCodes, content } = req.body;
 
     const { data, error } = await supabase
         .from('b_request_record')
@@ -140,9 +140,8 @@ router.post('/anomaly', async (req, res) => {
             type: 'anomaly',
             sub_type: subType,
             target_codes: targetCodes,
-            status: 'processing',
-            shop_name: shopName,
-            remark: content?.remark || content || null
+            status: 'processing'
+            // remark column doesn't exist per schema inspection
         })
         .select()
         .single();
@@ -250,7 +249,7 @@ router.post('/:id/audit', async (req, res) => {
     // feedback: 驳回原因
     // buyerPrices: 核价时的买手价格 { skc: price }
 
-    const newStatus = action === 'approve' ? 'completed' : 'rejected';
+    const newStatus = action === 'approve' ? 'approved' : 'rejected';
     const updates: any = {
         status: newStatus,
         updated_at: new Date().toISOString()

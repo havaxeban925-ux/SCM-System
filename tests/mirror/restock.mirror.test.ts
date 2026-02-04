@@ -99,7 +99,7 @@ export async function runRestockTests(): Promise<{ results: TestResult[]; issues
         const res = await post(`/restock/${createdOrderId}/ship`, {
             wbNumber: `WB${Date.now()}`,
             logisticsCompany: '顺丰',
-            shippedQty: 80  // 完整发货以满足入仓确认条件
+            shippedQty: 40
         });
         assertTrue(res.status === 200, `发货失败: ${JSON.stringify(res.data)}`);
     }));

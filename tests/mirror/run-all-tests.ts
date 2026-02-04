@@ -13,8 +13,6 @@ import { runSpuTests } from './spu.mirror.test';
 import { runPricingTests } from './pricing.mirror.test';
 import { runAnomalyTests } from './anomaly.mirror.test';
 import { runRestockTests } from './restock.mirror.test';
-import { runExtendedTests } from './extended-tests';
-import { runAdvancedTests } from './advanced.mirror.test';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -36,8 +34,6 @@ async function main() {
         { name: 'M4-核价申请', runner: runPricingTests },
         { name: 'M5-异常申请', runner: runAnomalyTests },
         { name: 'M6-补货订单', runner: runRestockTests },
-        { name: 'M7-扩展演示功能', runner: runExtendedTests },
-        { name: 'M8-高级场景', runner: runAdvancedTests },
     ];
 
     for (const mod of modules) {

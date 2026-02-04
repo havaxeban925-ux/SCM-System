@@ -56,7 +56,7 @@ router.post('/:id/confirm', async (req, res) => {
     }
 
     const actualQty = order.actual_quantity ?? order.plan_quantity;
-    const newStatus = actualQty < order.plan_quantity ? 'reviewing' : 'producing';
+    const newStatus = actualQty < order.plan_quantity ? '待买手复核' : '生产中';
 
     const { error } = await supabase
         .from('b_restock_order')
@@ -76,7 +76,7 @@ router.post('/:id/review', async (req, res) => {
     const { id } = req.params;
     const { agree } = req.body;
 
-    const newStatus = agree ? 'producing' : 'cancelled';
+    const newStatus = agree ? '生产中' : '已取消';
 
     const { error } = await supabase
         .from('b_restock_order')
@@ -122,7 +122,7 @@ router.post('/:id/ship', async (req, res) => {
     const { error } = await supabase
         .from('b_restock_order')
         .update({
-            status: 'confirming',
+            status: '待买手确认入仓',
             updated_at: new Date().toISOString()
         })
         .eq('id', id);
@@ -170,7 +170,7 @@ router.post('/:id/arrival', async (req, res) => {
     const { error } = await supabase
         .from('b_restock_order')
         .update({
-            status: isCompleted ? 'confirmed' : 'confirming',
+            status: isCompleted ? '已确认入仓' : '待买手确认入仓',
             arrived_quantity: newArrivedQty,
             updated_at: new Date().toISOString()
         })
