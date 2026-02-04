@@ -158,6 +158,34 @@ router.get('/shops', async (req, res) => {
     res.json({ data: data || [], total: count || 0, page, pageSize });
 });
 
+// POST /api/admin/restock - 创建补货订单（管理后台）
+router.post('/restock', async (req, res) => {
+    const { shopId, skcCode, name, planQuantity, remark } = req.body;
+
+    if (!shopId) {
+        return res.status(400).json({ error: 'Shop ID is required' });
+    }
+
+    const restockOrder = {
+        shop_id: shopId,
+        skc_code: skcCode || null,
+        name: name || null,
+        plan_quantity: planQuantity || 0,
+        status: 'pending',
+        remark: remark || '',
+        created_at: new Date().toISOString()
+    };
+
+    const { data, error } = await supabase
+        .from('b_restock_order')
+        .insert(restockOrder)
+        .select()
+        .single();
+
+    if (error) return res.status(500).json({ error: error.message });
+    res.json(data);
+});
+
 // POST /api/admin/shops - 创建商铺
 router.post('/shops', async (req, res) => {
     const { shopName, keyId, level, phone, bindingAccount } = req.body;

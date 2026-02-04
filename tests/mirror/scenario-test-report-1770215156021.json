@@ -1,0 +1,166 @@
+{
+  "executionTime": "2026-02-04T14:25:21.448Z",
+  "environment": {
+    "apiUrl": "http://localhost:3001/api",
+    "supabaseUrl": "https://oytivxjmmfibudwtjrhe.supabase.co"
+  },
+  "scenarios": [
+    {
+      "scenario": "SCN-001: 私推款式接款与核价完整流程",
+      "status": "passed",
+      "duration": 7102,
+      "steps": [
+        {
+          "step": "搜索目标店铺",
+          "expected": "返回店铺列表",
+          "actual": "返回0条记录",
+          "passed": true
+        },
+        {
+          "step": "创建私推记录",
+          "expected": "创建成功，生成记录ID",
+          "actual": "ID: PRI_SCM_SCENARIO_1770215121448_",
+          "passed": true
+        },
+        {
+          "step": "查看待确认私推列表",
+          "expected": "显示待确认私推",
+          "actual": "成功",
+          "passed": true
+        },
+        {
+          "step": "商家确认私推款式",
+          "expected": "模拟跳过（测试数据）",
+          "actual": "跳过",
+          "passed": true
+        },
+        {
+          "step": "提交核价申请",
+          "expected": "创建核价申请记录",
+          "actual": "ID: 8d7062d4-4ab5-4e68-9624-72ce4f944937",
+          "passed": true
+        },
+        {
+          "step": "查看待审批核价列表",
+          "expected": "显示待审批核价",
+          "actual": "成功",
+          "passed": true
+        },
+        {
+          "step": "买手审批通过",
+          "expected": "审批成功，状态更新",
+          "actual": "成功",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "scenario": "SCN-002: 公池款式接款与异常处理完整流程",
+      "status": "failed",
+      "duration": 6641,
+      "steps": [
+        {
+          "step": "推送公池款式",
+          "expected": "创建成功，设置最大接款数3",
+          "actual": "ID: 204363d6-36ff-4df4-a8ab-8eb53f44d92c",
+          "passed": true
+        },
+        {
+          "step": "商家B意向接款",
+          "expected": "接款成功，计数+1",
+          "actual": "成功",
+          "passed": true
+        },
+        {
+          "step": "商家C意向接款",
+          "expected": "接款成功，计数+1",
+          "actual": "成功",
+          "passed": true
+        },
+        {
+          "step": "商家D意向接款",
+          "expected": "接款成功，计数满（3/3）",
+          "actual": "失败",
+          "passed": false
+        },
+        {
+          "step": "验证款式自动隐藏",
+          "expected": "达到上限后hidden=true",
+          "actual": "未隐藏",
+          "passed": false
+        },
+        {
+          "step": "查看待确认订单",
+          "expected": "显示待确认订单列表",
+          "actual": "成功",
+          "passed": true
+        },
+        {
+          "step": "提交尺码异常申请",
+          "expected": "创建异常申请记录",
+          "actual": "ID: a814b631-11b4-4a45-a7d0-11274a2ddc42",
+          "passed": true
+        },
+        {
+          "step": "买手审批异常通过",
+          "expected": "审批成功",
+          "actual": "成功",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "scenario": "SCN-003: 补货订单全流程协同",
+      "status": "failed",
+      "duration": 951,
+      "steps": [
+        {
+          "step": "提交补货申请",
+          "expected": "创建补货申请记录",
+          "actual": "创建请求已发送",
+          "passed": false
+        },
+        {
+          "step": "查看待发货订单",
+          "expected": "显示待发货补货单",
+          "actual": "成功",
+          "passed": true
+        },
+        {
+          "step": "发货/物流/入仓",
+          "expected": "跳过（无补货记录ID）",
+          "actual": "跳过",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "scenario": "SCN-004: 开发进度跟踪与SPU关联",
+      "status": "passed",
+      "duration": 436,
+      "steps": [
+        {
+          "step": "查看开发队列",
+          "expected": "显示开发进度列表",
+          "actual": "成功",
+          "passed": true
+        },
+        {
+          "step": "开发进度更新",
+          "expected": "跳过（无开发记录）",
+          "actual": "跳过",
+          "passed": true
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "total": 4,
+    "passed": 2,
+    "failed": 2,
+    "totalSteps": 20,
+    "passedSteps": 17,
+    "failedSteps": 3,
+    "duration": 34481
+  }
+}

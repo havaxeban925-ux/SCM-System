@@ -1,254 +1,184 @@
 {
-  "timestamp": "2026-02-03T14:54:20.738Z",
-  "totalTests": 41,
-  "passed": 41,
-  "failed": 0,
+  "timestamp": "2026-02-04T12:43:44.856Z",
+  "totalTests": 29,
+  "passed": 27,
+  "failed": 2,
   "results": [
     {
       "module": "Auth",
       "testName": "用户注册",
       "passed": true,
-      "duration": 6413
+      "duration": 6541
     },
     {
       "module": "Auth",
       "testName": "重复用户名拒绝",
       "passed": true,
-      "duration": 684
+      "duration": 697
     },
     {
       "module": "Auth",
       "testName": "用户审批",
       "passed": true,
-      "duration": 5068
+      "duration": 3284
     },
     {
       "module": "Auth",
       "testName": "用户登录",
       "passed": true,
-      "duration": 471
+      "duration": 553
     },
     {
       "module": "Auth",
       "testName": "错误密码拒绝",
       "passed": true,
-      "duration": 501
+      "duration": 478
     },
     {
       "module": "SPU",
       "testName": "获取公池列表",
       "passed": true,
-      "duration": 4472
+      "duration": 1036
     },
     {
       "module": "SPU",
       "testName": "表达意向",
       "passed": true,
-      "duration": 9045
+      "duration": 2726
     },
     {
       "module": "SPU",
       "testName": "意向上限验证",
       "passed": true,
-      "duration": 7683
+      "duration": 2595
     },
     {
       "module": "SPU",
       "testName": "确认接款",
       "passed": true,
-      "duration": 9450
+      "duration": 2406
     },
     {
       "module": "SPU",
       "testName": "Schema验证(无category)",
       "passed": true,
-      "duration": 4489
+      "duration": 1293
     },
     {
       "module": "Pricing",
       "testName": "创建核价申请",
       "passed": true,
-      "duration": 3910
+      "duration": 713
     },
     {
       "module": "Pricing",
       "testName": "获取申请列表",
       "passed": true,
-      "duration": 561
+      "duration": 524
     },
     {
       "module": "Pricing",
       "testName": "pricing_details存储",
       "passed": true,
-      "duration": 3790
+      "duration": 974
     },
     {
       "module": "Pricing",
       "testName": "二次核价提交",
       "passed": true,
-      "duration": 1242
+      "duration": 861
     },
     {
       "module": "Pricing",
       "testName": "审批通过",
-      "passed": true,
-      "duration": 1272
+      "passed": false,
+      "error": "状态未更新为completed: approved",
+      "duration": 1455
     },
     {
       "module": "Pricing",
       "testName": "b_quote_order写入",
       "passed": true,
-      "duration": 3654
+      "duration": 1320
     },
     {
       "module": "Anomaly",
       "testName": "尺码问题异常",
       "passed": true,
-      "duration": 3731
+      "duration": 664
     },
     {
       "module": "Anomaly",
       "testName": "申请下架异常",
       "passed": true,
-      "duration": 526
+      "duration": 643
     },
     {
       "module": "Anomaly",
       "testName": "图片异常",
       "passed": true,
-      "duration": 535
+      "duration": 454
     },
     {
       "module": "Anomaly",
       "testName": "大货异常",
       "passed": true,
-      "duration": 480
+      "duration": 473
     },
     {
       "module": "Anomaly",
       "testName": "获取异常列表",
       "passed": true,
-      "duration": 532
+      "duration": 457
     },
     {
       "module": "Anomaly",
       "testName": "remark字段存储",
       "passed": true,
-      "duration": 4642
+      "duration": 511
     },
     {
       "module": "Anomaly",
       "testName": "审批驳回",
       "passed": true,
-      "duration": 12467
+      "duration": 2875
     },
     {
       "module": "Restock",
       "testName": "获取补货列表",
       "passed": true,
-      "duration": 4202
+      "duration": 1505
     },
     {
       "module": "Restock",
       "testName": "更新接单数量",
       "passed": true,
-      "duration": 4354
+      "duration": 1133
     },
     {
       "module": "Restock",
       "testName": "确认接单",
       "passed": true,
-      "duration": 4603
+      "duration": 2100
     },
     {
       "module": "Restock",
       "testName": "发货操作",
       "passed": true,
-      "duration": 15893
+      "duration": 2370
     },
     {
       "module": "Restock",
       "testName": "获取物流明细",
       "passed": true,
-      "duration": 470
+      "duration": 489
     },
     {
       "module": "Restock",
       "testName": "入仓确认",
-      "passed": true,
-      "duration": 17165
-    },
-    {
-      "module": "Admin",
-      "testName": "创建与获取标签",
-      "passed": true,
-      "duration": 5363
-    },
-    {
-      "module": "Admin",
-      "testName": "商铺生命周期",
-      "passed": true,
-      "duration": 917
-    },
-    {
-      "module": "Push",
-      "testName": "定向私推操作",
-      "passed": true,
-      "duration": 467
-    },
-    {
-      "module": "Development",
-      "testName": "开发全流程",
-      "passed": true,
-      "duration": 6134
-    },
-    {
-      "module": "Restock",
-      "testName": "商家拒单流程",
-      "passed": true,
-      "duration": 13274
-    },
-    {
-      "module": "Admin",
-      "testName": "系统驾驶舱数据",
-      "passed": true,
-      "duration": 43335
-    },
-    {
-      "module": "Admin",
-      "testName": "商家删除申请流程",
-      "passed": true,
-      "duration": 38705
-    },
-    {
-      "module": "AdvancedDev",
-      "testName": "公海推款",
-      "passed": true,
-      "duration": 3722
-    },
-    {
-      "module": "AdvancedDev",
-      "testName": "放弃开发流程",
-      "passed": true,
-      "duration": 1387
-    },
-    {
-      "module": "ComplexPricing",
-      "testName": "同款同价申请",
-      "passed": true,
-      "duration": 438
-    },
-    {
-      "module": "ComplexPricing",
-      "testName": "涨价申请",
-      "passed": true,
-      "duration": 723
-    },
-    {
-      "module": "ComplexPricing",
-      "testName": "商家主动申请发款",
-      "passed": true,
-      "duration": 482
+      "passed": false,
+      "error": "状态未更新为confirmed: 待买手确认入仓",
+      "duration": 3125
     }
   ],
   "issues": [
@@ -257,6 +187,24 @@
       "module": "Pricing",
       "description": "b_quote_order表无写入数据（写入逻辑已被注释）",
       "suggestion": "此为已知问题，需后续Schema同步后恢复写入逻辑"
+    },
+    {
+      "severity": "major",
+      "module": "Pricing",
+      "description": "1个核价测试失败: 审批通过",
+      "suggestion": "检查requests.ts路由中的/quote端点"
+    },
+    {
+      "severity": "minor",
+      "module": "Anomaly",
+      "description": "content/remark未找到存储位置",
+      "suggestion": "确认异常内容存储在remark还是pricing_details字段"
+    },
+    {
+      "severity": "major",
+      "module": "Restock",
+      "description": "1个补货测试失败: 入仓确认",
+      "suggestion": "检查restock.ts路由"
     }
   ]
 }

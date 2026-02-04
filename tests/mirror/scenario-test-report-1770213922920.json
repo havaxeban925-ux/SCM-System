@@ -1,0 +1,256 @@
+{
+  "executionTime": "2026-02-04T14:04:48.726Z",
+  "environment": {
+    "apiUrl": "http://localhost:3001/api",
+    "supabaseUrl": "https://oytivxjmmfibudwtjrhe.supabase.co"
+  },
+  "scenarios": [
+    {
+      "scenario": "SCN-001: 私推款式接款与核价完整流程",
+      "status": "failed",
+      "duration": 5822,
+      "steps": [
+        {
+          "step": "上传款式图片",
+          "expected": "上传成功",
+          "actual": "失败",
+          "passed": false
+        },
+        {
+          "step": "搜索目标店铺",
+          "expected": "返回店铺列表",
+          "actual": "失败",
+          "passed": false
+        },
+        {
+          "step": "创建私推记录",
+          "expected": "创建成功，生成记录ID",
+          "actual": "ID: PRI_SCM_SCENARIO_1770213888726_",
+          "passed": true
+        },
+        {
+          "step": "查看待确认私推列表",
+          "expected": "显示待确认私推",
+          "actual": "成功",
+          "passed": true
+        },
+        {
+          "step": "商家接受私推款式",
+          "expected": "状态变更为已确认",
+          "actual": "失败",
+          "passed": false
+        },
+        {
+          "step": "查看已确认列表",
+          "expected": "显示已确认私推",
+          "actual": "成功",
+          "passed": true
+        },
+        {
+          "step": "提交核价申请",
+          "expected": "创建核价申请记录",
+          "actual": "ID: 445c9c99-afbb-41ed-9954-4ac8025ea54a",
+          "passed": true
+        },
+        {
+          "step": "查看待审批核价列表",
+          "expected": "显示待审批核价",
+          "actual": "失败",
+          "passed": false
+        },
+        {
+          "step": "买手审批通过",
+          "expected": "审批成功，状态更新",
+          "actual": "成功",
+          "passed": true
+        },
+        {
+          "step": "验证私推状态",
+          "expected": "状态为confirmed",
+          "actual": "未知",
+          "passed": false
+        },
+        {
+          "step": "验证核价状态",
+          "expected": "状态为approved",
+          "actual": "未知",
+          "passed": false
+        }
+      ]
+    },
+    {
+      "scenario": "SCN-002: 公池款式接款与异常处理完整流程",
+      "status": "failed",
+      "duration": 4904,
+      "steps": [
+        {
+          "step": "推送公池款式",
+          "expected": "创建成功，设置最大接款数3",
+          "actual": "ID: PUB_SCM_SCENARIO_1770213888726_",
+          "passed": true
+        },
+        {
+          "step": "商家B意向接款",
+          "expected": "接款成功，计数+1",
+          "actual": "失败",
+          "passed": false
+        },
+        {
+          "step": "商家C意向接款",
+          "expected": "接款成功，计数+1",
+          "actual": "失败",
+          "passed": false
+        },
+        {
+          "step": "商家D意向接款",
+          "expected": "接款成功，计数满（3/3）",
+          "actual": "失败",
+          "passed": false
+        },
+        {
+          "step": "验证款式自动隐藏",
+          "expected": "达到上限后hidden=true",
+          "actual": "未隐藏",
+          "passed": false
+        },
+        {
+          "step": "查看待确认订单",
+          "expected": "显示待确认订单列表",
+          "actual": "失败",
+          "passed": false
+        },
+        {
+          "step": "商家B确认订单(数量80)",
+          "expected": "确认成功",
+          "actual": "失败",
+          "passed": false
+        },
+        {
+          "step": "提交尺码异常申请",
+          "expected": "创建异常申请记录",
+          "actual": "ID: 704afec1-6096-452c-aa9b-b9861a130202",
+          "passed": true
+        },
+        {
+          "step": "买手审批异常通过",
+          "expected": "审批成功",
+          "actual": "成功",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "scenario": "SCN-003: 补货订单全流程协同",
+      "status": "failed",
+      "duration": 2394,
+      "steps": [
+        {
+          "step": "提交补货申请",
+          "expected": "创建补货申请记录",
+          "actual": "ID: RESTOCK_SCM_SCENARIO_1770213888726_",
+          "passed": true
+        },
+        {
+          "step": "买手审批补货通过",
+          "expected": "审批成功，状态变为approved",
+          "actual": "失败",
+          "passed": false
+        },
+        {
+          "step": "查看待发货订单",
+          "expected": "显示待发货补货单",
+          "actual": "失败",
+          "passed": false
+        },
+        {
+          "step": "商家发货",
+          "expected": "发货成功，创建物流记录",
+          "actual": "失败",
+          "passed": false
+        },
+        {
+          "step": "查看物流跟踪",
+          "expected": "获取物流跟踪信息",
+          "actual": "失败",
+          "passed": false
+        },
+        {
+          "step": "买手确认入仓",
+          "expected": "入仓确认成功",
+          "actual": "失败",
+          "passed": false
+        },
+        {
+          "step": "验证补货单状态",
+          "expected": "状态为completed",
+          "actual": "未知",
+          "passed": false
+        }
+      ]
+    },
+    {
+      "scenario": "SCN-004: 开发进度跟踪与SPU关联",
+      "status": "failed",
+      "duration": 1517,
+      "steps": [
+        {
+          "step": "创建开发进度记录",
+          "expected": "创建成功，初始状态drafting",
+          "actual": "ID: DEV_SCM_SCENARIO_1770213888726_",
+          "passed": true
+        },
+        {
+          "step": "更新状态: drafting → pattern",
+          "expected": "状态更新成功",
+          "actual": "失败",
+          "passed": false
+        },
+        {
+          "step": "更新状态: pattern → helping",
+          "expected": "状态更新成功",
+          "actual": "失败",
+          "passed": false
+        },
+        {
+          "step": "更新状态: helping → ok",
+          "expected": "状态更新成功",
+          "actual": "失败",
+          "passed": false
+        },
+        {
+          "step": "填写SPU编码",
+          "expected": "SPU编码关联成功",
+          "actual": "失败",
+          "passed": false
+        },
+        {
+          "step": "查看开发队列",
+          "expected": "显示开发进度列表",
+          "actual": "成功",
+          "passed": true
+        },
+        {
+          "step": "更新状态: ok → success",
+          "expected": "状态更新成功，开发完成",
+          "actual": "失败",
+          "passed": false
+        },
+        {
+          "step": "验证最终状态",
+          "expected": "状态为success",
+          "actual": "未知",
+          "passed": false
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "total": 4,
+    "passed": 0,
+    "failed": 4,
+    "totalSteps": 35,
+    "passedSteps": 11,
+    "failedSteps": 24,
+    "duration": 34116
+  }
+}

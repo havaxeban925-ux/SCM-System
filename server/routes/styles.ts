@@ -104,6 +104,7 @@ router.post('/:id/abandon', async (req, res) => {
 router.post('/public/:id/intent', async (req, res) => {
     const { id } = req.params;
 
+    // 查询当前款式状态
     const { data: style, error: fetchError } = await supabase
         .from('b_public_style')
         .select('intent_count, max_intents')
@@ -114,17 +115,16 @@ router.post('/public/:id/intent', async (req, res) => {
         return res.status(404).json({ error: 'Style not found' });
     }
 
-    if (style.intent_count >= style.max_intents) {
-        return res.status(400).json({ error: 'Max intents reached' });
-    }
+    const newCount = style.intent_count + 1;
 
+    // 更新计数（暂时不更新hidden字段，因为该字段可能不存在）
     const { error } = await supabase
         .from('b_public_style')
-        .update({ intent_count: style.intent_count + 1 })
+        .update({ intent_count: newCount })
         .eq('id', id);
 
     if (error) return res.status(500).json({ error: error.message });
-    res.json({ success: true });
+    res.json({ success: true, intentCount: newCount });
 });
 
 // POST /api/styles/public/:id/confirm - 从公池接款

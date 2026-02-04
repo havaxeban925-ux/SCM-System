@@ -23,6 +23,20 @@ router.get('/', async (req, res) => {
     res.json({ data: data || [], total: count || 0, page, pageSize });
 });
 
+// GET /api/restock/:id - 获取单个补货订单
+router.get('/:id', async (req, res) => {
+    const { id } = req.params;
+
+    const { data, error } = await supabase
+        .from('b_restock_order')
+        .select('*')
+        .eq('id', id)
+        .single();
+
+    if (error) return res.status(404).json({ error: 'Restock order not found' });
+    res.json(data);
+});
+
 // PATCH /api/restock/:id/quantity - 更新数量
 router.patch('/:id/quantity', async (req, res) => {
     const { id } = req.params;
@@ -56,7 +70,7 @@ router.post('/:id/confirm', async (req, res) => {
     }
 
     const actualQty = order.actual_quantity ?? order.plan_quantity;
-    const newStatus = actualQty < order.plan_quantity ? '待买手复核' : '生产中';
+    const newStatus = actualQty < order.plan_quantity ? 'reviewing' : 'producing';
 
     const { error } = await supabase
         .from('b_restock_order')
@@ -76,7 +90,7 @@ router.post('/:id/review', async (req, res) => {
     const { id } = req.params;
     const { agree } = req.body;
 
-    const newStatus = agree ? '生产中' : '已取消';
+    const newStatus = agree ? 'producing' : 'cancelled';
 
     const { error } = await supabase
         .from('b_restock_order')
@@ -122,7 +136,7 @@ router.post('/:id/ship', async (req, res) => {
     const { error } = await supabase
         .from('b_restock_order')
         .update({
-            status: '待买手确认入仓',
+            status: 'shipped',
             updated_at: new Date().toISOString()
         })
         .eq('id', id);
@@ -170,7 +184,7 @@ router.post('/:id/arrival', async (req, res) => {
     const { error } = await supabase
         .from('b_restock_order')
         .update({
-            status: isCompleted ? '已确认入仓' : '待买手确认入仓',
+            status: isCompleted ? 'completed' : 'shipped',
             arrived_quantity: newArrivedQty,
             updated_at: new Date().toISOString()
         })
