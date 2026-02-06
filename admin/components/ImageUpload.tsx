@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useCallback, useEffect } from 'react';
 
 interface ImageUploadProps {
     value?: string;
@@ -11,7 +11,15 @@ const ImageUpload: React.FC<ImageUploadProps> = ({ value, onChange, label = '上
     const inputRef = useRef<HTMLInputElement>(null);
     const [isDragging, setIsDragging] = useState(false);
 
-    const handleFile = (file: File) => {
+    // 预初始化 input 元素以减少首次点击延迟
+    useEffect(() => {
+        if (inputRef.current) {
+            // 强制浏览器预加载文件选择器相关资源
+            inputRef.current.setAttribute('data-ready', 'true');
+        }
+    }, []);
+
+    const handleFile = useCallback((file: File) => {
         if (!file) return;
 
         // 简单限制图片大小 (例如 2MB)，避免 Base64 过大卡顿
@@ -28,25 +36,32 @@ const ImageUpload: React.FC<ImageUploadProps> = ({ value, onChange, label = '上
             }
         };
         reader.readAsDataURL(file);
-    };
+    }, [onChange]);
 
-    const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (file) handleFile(file);
-    };
+    }, [handleFile]);
 
-    const handleDrop = (e: React.DragEvent) => {
+    const handleDrop = useCallback((e: React.DragEvent) => {
         e.preventDefault();
         setIsDragging(false);
         const file = e.dataTransfer.files?.[0];
         if (file) handleFile(file);
-    };
+    }, [handleFile]);
 
-    const handleRemove = (e: React.MouseEvent) => {
+    const handleRemove = useCallback((e: React.MouseEvent) => {
         e.stopPropagation();
         onChange('');
         if (inputRef.current) inputRef.current.value = '';
-    };
+    }, [onChange]);
+
+    // 使用 requestAnimationFrame 优化点击响应，避免主线程阻塞
+    const handleClick = useCallback(() => {
+        requestAnimationFrame(() => {
+            inputRef.current?.click();
+        });
+    }, []);
 
     return (
         <div className="form-group">
@@ -63,7 +78,7 @@ const ImageUpload: React.FC<ImageUploadProps> = ({ value, onChange, label = '上
             {!value ? (
                 <div
                     className={`upload-area ${isDragging ? 'dragging' : ''}`}
-                    onClick={() => inputRef.current?.click()}
+                    onClick={handleClick}
                     onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
                     onDragLeave={() => setIsDragging(false)}
                     onDrop={handleDrop}
@@ -126,7 +141,7 @@ const ImageUpload: React.FC<ImageUploadProps> = ({ value, onChange, label = '上
                     >
                         <span
                             style={{ color: 'white', fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}
-                            onClick={() => inputRef.current?.click()}
+                            onClick={handleClick}
                         >
                             <span className="material-symbols-outlined" style={{ fontSize: 14 }}>edit</span>
                             更换图片

@@ -158,6 +158,55 @@ router.get('/shops', async (req, res) => {
     res.json({ data: data || [], total: count || 0, page, pageSize });
 });
 
+// GET /api/admin/restock - 获取补货订单列表（带店铺名称）
+router.get('/restock', async (req, res) => {
+    const page = parseInt(req.query.page as string) || 1;
+    const pageSize = parseInt(req.query.pageSize as string) || 50;
+    const offset = (page - 1) * pageSize;
+
+    // Always fetch orders first
+    const { data: orders, error, count } = await supabase
+        .from('b_restock_order')
+        .select('*', { count: 'exact' })
+        .order('created_at', { ascending: false })
+        .range(offset, offset + pageSize - 1);
+
+    if (error) return res.status(500).json({ error: error.message });
+
+    // Fetch all unique shop IDs from orders
+    const shopIds = [...new Set((orders || []).map(o => o.shop_id).filter(Boolean))];
+    console.log('[Admin Restock] Shop IDs to lookup:', shopIds);
+
+    // Fetch shop names
+    let shopMap: Record<string, string> = {};
+    if (shopIds.length > 0) {
+        const { data: shops, error: shopError } = await supabase
+            .from('sys_shop')
+            .select('id, shop_name')
+            .in('id', shopIds);
+
+        if (shopError) {
+            console.warn('[Admin Restock] Failed to fetch shops:', shopError.message);
+        } else {
+            shopMap = (shops || []).reduce((acc, s) => {
+                acc[s.id] = s.shop_name;
+                return acc;
+            }, {} as Record<string, string>);
+            console.log('[Admin Restock] Shop map:', shopMap);
+        }
+    }
+
+    // Map shop names to orders
+    const joined = (orders || []).map(o => ({
+        ...o,
+        shop_name: shopMap[o.shop_id] || 'Unknown Shop'
+    }));
+
+    console.log('[Admin Restock] First 3 orders:', joined.slice(0, 3).map(o => ({ id: o.id, shop_id: o.shop_id, shop_name: o.shop_name })));
+
+    res.json({ data: joined, total: count || 0, page, pageSize });
+});
+
 // POST /api/admin/restock - 创建补货订单（管理后台）
 router.post('/restock', async (req, res) => {
     const { shopId, skcCode, name, planQuantity, remark } = req.body;
@@ -368,13 +417,23 @@ router.post('/push/private', async (req, res) => {
     // 1. 批量推送不同款式: { styles: [{ shopId, name, imageUrl, ... }] }
     // 2. 单款推送多店: { shopIds: [], name, imageUrl, ... }
 
+    // Helper to get shop info including key_name
+    const getShopInfo = async (shopId: string) => {
+        const { data } = await supabase.from('sys_shop').select('shop_name, key_name').eq('id', shopId).single();
+        return data || { shop_name: 'Unknown', key_name: null };
+    };
+
     let stylesToInsert = [];
 
     if (req.body.styles && Array.isArray(req.body.styles)) {
-        stylesToInsert = req.body.styles.map((s: any) => ({
+        // 并行获取店铺信息
+        const shopInfos = await Promise.all(req.body.styles.map((s: any) => getShopInfo(s.shopId)));
+
+        stylesToInsert = req.body.styles.map((s: any, index: number) => ({
             push_type: 'PRIVATE',
             shop_id: s.shopId,
-            shop_name: s.shopName,
+            shop_name: shopInfos[index].shop_name,
+            key_name: shopInfos[index].key_name, // 保存 KEY 名称
             image_url: s.imageUrl,
             name: s.name,
             remark: s.remark,
@@ -386,14 +445,20 @@ router.post('/push/private', async (req, res) => {
             created_by: buyerName
         }));
     } else {
-        const { shopIds, imageUrl, name, remark, deadline, tags } = req.body;
+        const { shopIds, imageUrl, name, remark, deadline, tags, refLink } = req.body;
         if (!shopIds || !Array.isArray(shopIds)) {
             return res.status(400).json({ error: 'Invalid payload: shopIds or styles required' });
         }
-        stylesToInsert = shopIds.map((shopId: string) => ({
+
+        const shopInfos = await Promise.all(shopIds.map((id: string) => getShopInfo(id)));
+
+        stylesToInsert = shopIds.map((shopId: string, index: number) => ({
             push_type: 'PRIVATE',
             shop_id: shopId,
+            shop_name: shopInfos[index].shop_name,
+            key_name: shopInfos[index].key_name, // 保存 KEY 名称
             image_url: imageUrl,
+            ref_link: refLink || null, // 问题3修复：存储参考链接
             name,
             remark,
             tags: tags || [],
@@ -499,6 +564,22 @@ router.delete('/spu/:id', async (req, res) => {
     res.json({ success: true });
 });
 
+// POST /api/admin/styles/:id/confirm - 问题12修复：确认SPU，归入SPU库
+router.post('/styles/:id/confirm', async (req, res) => {
+    const { id } = req.params;
+
+    const { error } = await supabase
+        .from('b_style_demand')
+        .update({
+            status: 'completed',
+            updated_at: new Date().toISOString()
+        })
+        .eq('id', id);
+
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ success: true, message: 'SPU已确认归入库' });
+});
+
 // ============ 款式管理（管理后台视角） ============
 
 // GET /api/admin/styles - 获取所有款式（支持多状态筛选）
@@ -573,9 +654,16 @@ router.delete('/demo/cleanup', async (req, res) => {
 
 // ============ 系统数据清理 ============
 
-// DELETE /api/admin/system/cleanup - 清空所有工单数据（款式、核价、异常、大货、公池）
+// DELETE /api/admin/system/cleanup - 清空所有工单数据（款式、核价、异常、大货、公池、物流）
 router.delete('/system/cleanup', async (req, res) => {
     try {
+        // 0. 清空物流记录 (b_restock_logistics) - Dependency of restock_order
+        const { error: logisticsError } = await supabase
+            .from('b_restock_logistics')
+            .delete()
+            .neq('id', '00000000-0000-0000-0000-000000000000');
+        if (logisticsError) throw logisticsError;
+
         // 1. 清空款式工单 (b_style_demand)
         const { error: styleError } = await supabase
             .from('b_style_demand')

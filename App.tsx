@@ -235,6 +235,9 @@ const App: React.FC = () => {
   const [myShops, setMyShops] = useState<Shop[]>([]);
   const [currentShopId, setCurrentShopId] = useState<string | undefined>(undefined);
 
+  // 静默刷新 Key - 用于触发子组件重新获取数据
+  const [refreshKey, setRefreshKey] = useState(0);
+
   const [currentView, setCurrentView] = useState<AppView>(AppView.STYLE_WORKBENCH);
   const [showQuotationDrawer, setShowQuotationDrawer] = useState(false);
 
@@ -273,41 +276,106 @@ const App: React.FC = () => {
     }
   };
 
-  // OPT-4: 浏览器通知轮询
+  // ✅ Phase 2: SSE 实时通知 + 轮询降级
   useEffect(() => {
     if (!currentUser || currentUser.status !== 'approved') return;
 
+    const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+    const shopName = currentUser.shop_name || '';
+
+    let eventSource: EventSource | null = null;
+    let pollingInterval: ReturnType<typeof setInterval> | null = null;
+    let retryCount = 0;
+    let retryDelay = 1000;
+    const maxRetries = 3;
+    const maxDelay = 30000;
     let lastCheckTime = Date.now();
 
-    const checkUpdates = async () => {
-      try {
-        const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
-        const shopName = currentUser.shop_name || '';
-        const res = await fetch(
-          `${API_BASE}/api/notifications?shop_name=${encodeURIComponent(shopName)}&since=${lastCheckTime}`
-        );
-        const data = await res.json();
+    // 处理收到的通知
+    const handleNotification = (update: { title: string; message: string; type: string }) => {
+      // 浏览器通知
+      if ('Notification' in window && Notification.permission === 'granted') {
+        new Notification(update.title, { body: update.message });
+      }
+      // 更新UI消息列表
+      setMessages(prev => [{
+        id: Date.now().toString(),
+        title: update.title,
+        content: update.message,
+        time: '刚刚',
+        read: false,
+        targetView: AppView.STYLE_WORKBENCH
+      }, ...prev]);
+    };
 
-        if (data.updates && data.updates.length > 0) {
-          data.updates.forEach((update: any) => {
-            // 浏览器通知
-            if ('Notification' in window && Notification.permission === 'granted') {
-              new Notification(update.title, { body: update.message });
-            }
-            // 更新UI消息列表
-            setMessages(prev => [{
-              id: Date.now().toString(),
-              title: update.title,
-              content: update.message,
-              time: '刚刚',
-              read: false,
-              targetView: AppView.STYLE_WORKBENCH
-            }, ...prev]);
-          });
-          lastCheckTime = Date.now();
+    // 轮询降级方案
+    const startPolling = () => {
+      console.log('[Notification] Falling back to polling');
+      pollingInterval = setInterval(async () => {
+        try {
+          const res = await fetch(
+            `${API_BASE}/api/notifications?shop_name=${encodeURIComponent(shopName)}&since=${lastCheckTime}`
+          );
+          const data = await res.json();
+          if (data.updates && data.updates.length > 0) {
+            data.updates.forEach(handleNotification);
+            lastCheckTime = Date.now();
+          }
+        } catch (error) {
+          console.error('通知轮询失败:', error);
         }
-      } catch (error) {
-        console.error('通知轮询失败:', error);
+      }, 30000);
+    };
+
+    // SSE 连接
+    const connectSSE = () => {
+      try {
+        eventSource = new EventSource(
+          `${API_BASE}/api/notifications/stream?shop_name=${encodeURIComponent(shopName)}`
+        );
+
+        // 连接成功
+        eventSource.addEventListener('connected', (e) => {
+          console.log('[SSE] Connected:', JSON.parse(e.data));
+          retryCount = 0;
+          retryDelay = 1000;
+        });
+
+        // 接收通知事件
+        eventSource.addEventListener('order_complete', (e) => handleNotification(JSON.parse(e.data)));
+        eventSource.addEventListener('new_style', (e) => handleNotification(JSON.parse(e.data)));
+        eventSource.addEventListener('restock_update', (e) => handleNotification(JSON.parse(e.data)));
+        eventSource.addEventListener('price_confirm', (e) => handleNotification(JSON.parse(e.data)));
+
+        // 通用消息处理
+        eventSource.onmessage = (e) => {
+          try {
+            const notification = JSON.parse(e.data);
+            handleNotification(notification);
+          } catch { }
+        };
+
+        // 错误处理 + 重连
+        eventSource.onerror = () => {
+          console.warn('[SSE] Connection error, retrying...');
+          eventSource?.close();
+          eventSource = null;
+
+          retryCount++;
+          if (retryCount <= maxRetries) {
+            // 指数退避重连
+            setTimeout(() => {
+              connectSSE();
+              retryDelay = Math.min(retryDelay * 2, maxDelay);
+            }, retryDelay);
+          } else {
+            // 超过重试次数,降级到轮询
+            startPolling();
+          }
+        };
+      } catch (err) {
+        console.error('[SSE] Failed to create EventSource:', err);
+        startPolling();
       }
     };
 
@@ -316,13 +384,14 @@ const App: React.FC = () => {
       Notification.requestPermission();
     }
 
-    // 每分钟轮询
-    const interval = setInterval(checkUpdates, 60000);
+    // 启动 SSE 连接
+    connectSSE();
 
-    // 初次检查
-    checkUpdates();
-
-    return () => clearInterval(interval);
+    // 清理
+    return () => {
+      eventSource?.close();
+      if (pollingInterval) clearInterval(pollingInterval);
+    };
   }, [currentUser]);
 
   const handleConfirmStyle = (style: StyleItem) => {
@@ -407,9 +476,9 @@ const App: React.FC = () => {
         </div>
         <div className="flex items-center gap-6">
           <div className="flex items-center gap-4 border-l border-white/20 pl-6">
-            {/* 刷新按钮 */}
+            {/* 刷新按钮 - 静默刷新 */}
             <button
-              onClick={() => window.location.reload()}
+              onClick={() => setRefreshKey(k => k + 1)}
               className="flex items-center gap-1 px-3 py-1.5 rounded bg-white/10 hover:bg-white/20 text-white text-sm font-medium transition-colors"
             >
               <span className="material-symbols-outlined" style={{ fontSize: 18 }}>refresh</span>
@@ -525,6 +594,7 @@ const App: React.FC = () => {
         <ErrorBoundary name="MainView">
           <div style={{ display: currentView === AppView.STYLE_WORKBENCH ? 'block' : 'none' }}>
             <StyleWorkbench
+              key={`style-workbench-${refreshKey}`}
               availableStyles={availableStyles}
               onConfirmStyle={handleConfirmStyle}
               shopId={currentShopId}
@@ -532,16 +602,17 @@ const App: React.FC = () => {
           </div>
           <div style={{ display: currentView === AppView.DEVELOPMENT_PROGRESS ? 'block' : 'none' }}>
             <DevelopmentProgress
+              key={`development-progress-${refreshKey}`}
               styles={stylesInDevelopment}
               onAbandon={handleAbandonDevelopment}
               onUpdateStatus={handleUpdateDevStatus}
             />
           </div>
           <div style={{ display: currentView === AppView.REQUEST_WORKBENCH ? 'block' : 'none' }}>
-            <RequestWorkbench onNewRequest={() => setShowQuotationDrawer(true)} />
+            <RequestWorkbench key={`request-workbench-${refreshKey}`} onNewRequest={() => setShowQuotationDrawer(true)} />
           </div>
           <div style={{ display: currentView === AppView.REPLENISHMENT ? 'block' : 'none' }}>
-            <ReplenishmentSynergy />
+            <ReplenishmentSynergy key={`replenishment-${refreshKey}`} />
           </div>
         </ErrorBoundary>
       </main>

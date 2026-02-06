@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { updateRequestUrgentStatus } from '../../services/requestService';
+import { getHandlerAlias, getHandlerColor } from '../utils/handlerMapping';
 
 interface AnomalyOrder {
     id: string;
@@ -9,6 +11,8 @@ interface AnomalyOrder {
     submit_time: string;
     status: '待处理' | '已处理' | '已驳回';
     content?: string;
+    is_urgent?: boolean;
+    handler_name?: string;
 }
 
 const AnomalyOrderPage: React.FC = () => {
@@ -38,7 +42,9 @@ const AnomalyOrderPage: React.FC = () => {
                     status: item.status === 'processing' ? '待处理' :
                         item.status === 'completed' || item.status === 'approved' ? '已处理' :
                             item.status === 'rejected' ? '已驳回' : '待处理',
-                    content: item.remark
+                    content: item.remark,
+                    is_urgent: item.is_urgent,
+                    handler_name: item.handler_name
                 }));
                 setOrders(mappedOrders);
             } catch (error) {
@@ -68,6 +74,16 @@ const AnomalyOrderPage: React.FC = () => {
         if (!confirm('确定驳回该工单？')) return;
         setOrders(orders.map(o => o.id === id ? { ...o, status: '已驳回' as const } : o));
         alert('已驳回');
+    };
+
+    // 切换加急状态
+    const handleToggleUrgent = async (id: string, currentStatus: boolean) => {
+        const success = await updateRequestUrgentStatus(id, !currentStatus);
+        if (success) {
+            setOrders(orders.map(o => o.id === id ? { ...o, is_urgent: !currentStatus } : o));
+        } else {
+            alert('操作失败');
+        }
     };
 
     const getCategoryColor = (category: string) => {
@@ -129,6 +145,7 @@ const AnomalyOrderPage: React.FC = () => {
                             <th>二级类型</th>
                             <th>关联编码</th>
                             <th>提交时间</th>
+                            <th>Handler</th>
                             <th>状态</th>
                             <th>操作</th>
                         </tr>
@@ -136,13 +153,13 @@ const AnomalyOrderPage: React.FC = () => {
                     <tbody>
                         {filteredOrders.map(order => (
                             <tr key={order.id}>
-                                <td style={{ fontWeight: 500 }}>{order.shop_name}</td>
+                                <td style={{ color: 'var(--text-secondary)', fontSize: 13 }}>{order.shop_name}</td>
                                 <td>
                                     <span style={{
-                                        padding: '3px 8px',
+                                        ...getCategoryColor(order.category),
+                                        padding: '2px 6px',
                                         borderRadius: 4,
-                                        fontSize: 11,
-                                        ...getCategoryColor(order.category)
+                                        fontSize: 11
                                     }}>
                                         {order.category}
                                     </span>
@@ -174,6 +191,23 @@ const AnomalyOrderPage: React.FC = () => {
                                 </td>
                                 <td style={{ fontSize: 12, color: 'var(--text-muted)' }}>{order.submit_time}</td>
                                 <td>
+                                    {order.handler_name && (
+                                        <div style={{
+                                            ...getHandlerColor(order.handler_name),
+                                            width: 24,
+                                            height: 24,
+                                            borderRadius: '50%',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            fontSize: 11,
+                                            fontWeight: 600
+                                        }} title={order.handler_name}>
+                                            {getHandlerAlias(order.handler_name)}
+                                        </div>
+                                    )}
+                                </td>
+                                <td>
                                     <span className={`status-badge ${order.status === '已处理' ? 'completed' : order.status === '已驳回' ? 'rejected' : 'processing'}`}>
                                         {order.status}
                                     </span>
@@ -193,87 +227,96 @@ const AnomalyOrderPage: React.FC = () => {
                                         <button className="btn btn-sm btn-outline" onClick={() => setDetailModal({ show: true, order })}>
                                             详情
                                         </button>
+                                        <button
+                                            className={`btn btn-sm ${order.is_urgent ? 'btn-danger' : 'btn-secondary'}`}
+                                            style={{ minWidth: 60 }}
+                                            onClick={() => handleToggleUrgent(order.id, !!order.is_urgent)}
+                                        >
+                                            {order.is_urgent ? '取消加急' : '加急'}
+                                        </button>
                                     </div>
                                 </td>
                             </tr>
                         ))}
                     </tbody>
                 </table>
-            </div>
+            </div >
 
             {/* 详情弹窗 */}
-            {detailModal.show && detailModal.order && (
-                <div className="modal-overlay" onClick={() => setDetailModal({ show: false, order: null })}>
-                    <div className="modal" onClick={e => e.stopPropagation()}>
-                        <div className="modal-header">
-                            <span className="modal-title">异常工单详情</span>
-                            <button className="btn-icon" onClick={() => setDetailModal({ show: false, order: null })}>
-                                <span className="material-symbols-outlined">close</span>
-                            </button>
-                        </div>
-                        <div className="modal-body">
-                            <div className="detail-grid">
-                                <div className="detail-item">
-                                    <label>店铺名称</label>
-                                    <span>{detailModal.order.shop_name}</span>
-                                </div>
-                                <div className="detail-item">
-                                    <label>一级类型</label>
-                                    <span>{detailModal.order.category}</span>
-                                </div>
-                                <div className="detail-item">
-                                    <label>二级类型</label>
-                                    <span>{detailModal.order.sub_type}</span>
-                                </div>
-                                <div className="detail-item">
-                                    <label>提交时间</label>
-                                    <span>{detailModal.order.submit_time}</span>
-                                </div>
+            {
+                detailModal.show && detailModal.order && (
+                    <div className="modal-overlay" onClick={() => setDetailModal({ show: false, order: null })}>
+                        <div className="modal" onClick={e => e.stopPropagation()}>
+                            <div className="modal-header">
+                                <span className="modal-title">异常工单详情</span>
+                                <button className="btn-icon" onClick={() => setDetailModal({ show: false, order: null })}>
+                                    <span className="material-symbols-outlined">close</span>
+                                </button>
                             </div>
-
-                            <div className="detail-section">
-                                <h4>关联编码</h4>
-                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                                    {detailModal.order.target_codes.map((code, idx) => (
-                                        <span key={idx} className="spu-tag">{code}</span>
-                                    ))}
+                            <div className="modal-body">
+                                <div className="detail-grid">
+                                    <div className="detail-item">
+                                        <label>店铺名称</label>
+                                        <span>{detailModal.order.shop_name}</span>
+                                    </div>
+                                    <div className="detail-item">
+                                        <label>一级类型</label>
+                                        <span>{detailModal.order.category}</span>
+                                    </div>
+                                    <div className="detail-item">
+                                        <label>二级类型</label>
+                                        <span>{detailModal.order.sub_type}</span>
+                                    </div>
+                                    <div className="detail-item">
+                                        <label>提交时间</label>
+                                        <span>{detailModal.order.submit_time}</span>
+                                    </div>
                                 </div>
-                            </div>
 
-                            {detailModal.order.content && (
                                 <div className="detail-section">
-                                    <h4>问题描述</h4>
-                                    <p style={{ margin: 0, fontSize: 14 }}>{detailModal.order.content}</p>
+                                    <h4>关联编码</h4>
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                                        {detailModal.order.target_codes.map((code, idx) => (
+                                            <span key={idx} className="spu-tag">{code}</span>
+                                        ))}
+                                    </div>
                                 </div>
-                            )}
 
-                            <div className="detail-section">
-                                <h4>处理备注</h4>
-                                <textarea
-                                    className="form-textarea"
-                                    placeholder="输入处理备注..."
-                                    style={{ minHeight: 80 }}
-                                />
+                                {detailModal.order.content && (
+                                    <div className="detail-section">
+                                        <h4>问题描述</h4>
+                                        <p style={{ margin: 0, fontSize: 14 }}>{detailModal.order.content}</p>
+                                    </div>
+                                )}
+
+                                <div className="detail-section">
+                                    <h4>处理备注</h4>
+                                    <textarea
+                                        className="form-textarea"
+                                        placeholder="输入处理备注..."
+                                        style={{ minHeight: 80 }}
+                                    />
+                                </div>
                             </div>
-                        </div>
-                        <div className="modal-footer">
-                            <button className="btn btn-outline" onClick={() => setDetailModal({ show: false, order: null })}>
-                                关闭
-                            </button>
-                            {detailModal.order.status === '待处理' && (
-                                <>
-                                    <button className="btn btn-danger" onClick={() => { handleReject(detailModal.order!.id); setDetailModal({ show: false, order: null }); }}>
-                                        驳回
-                                    </button>
-                                    <button className="btn btn-primary" onClick={() => { handleProcess(detailModal.order!.id); setDetailModal({ show: false, order: null }); }}>
-                                        确认处理
-                                    </button>
-                                </>
-                            )}
+                            <div className="modal-footer">
+                                <button className="btn btn-outline" onClick={() => setDetailModal({ show: false, order: null })}>
+                                    关闭
+                                </button>
+                                {detailModal.order.status === '待处理' && (
+                                    <>
+                                        <button className="btn btn-danger" onClick={() => { handleReject(detailModal.order!.id); setDetailModal({ show: false, order: null }); }}>
+                                            驳回
+                                        </button>
+                                        <button className="btn btn-primary" onClick={() => { handleProcess(detailModal.order!.id); setDetailModal({ show: false, order: null }); }}>
+                                            确认处理
+                                        </button>
+                                    </>
+                                )}
+                            </div>
                         </div>
                     </div>
-                </div>
-            )}
+                )
+            }
 
             <style>{`
                 .order-page {
@@ -318,7 +361,7 @@ const AnomalyOrderPage: React.FC = () => {
                     font-size: 12px;
                 }
             `}</style>
-        </div>
+        </div >
     );
 };
 

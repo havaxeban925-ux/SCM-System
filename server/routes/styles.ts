@@ -13,8 +13,13 @@ router.get('/private', async (req, res) => {
     let query = supabase
         .from('b_style_demand')
         .select('*', { count: 'exact' })
-        .in('status', ['locked', 'new'])
         .order('created_at', { ascending: false });
+
+    // 支持 status=all 查询全部状态，否则默认只查 locked,new
+    const statusFilter = req.query.status as string;
+    if (statusFilter !== 'all') {
+        query = query.in('status', ['locked', 'new']);
+    }
 
     // 如果传入了 shopId，则仅显示该商铺的私推；
     // 如果没有传且角色不是管理员，可能需要通过中间件处理，但这里我们先支持前端传参。
@@ -100,14 +105,19 @@ router.post('/:id/abandon', async (req, res) => {
     res.json({ success: true });
 });
 
-// POST /api/styles/public/:id/intent - 表达意向
+// POST /api/styles/public/:id/intent - 表达意向（问题3修复：添加到私推）
 router.post('/public/:id/intent', async (req, res) => {
     const { id } = req.params;
+    const { shopId, shopName } = req.body;
+
+    if (!shopId || !shopName) {
+        return res.status(400).json({ error: 'shopId and shopName are required' });
+    }
 
     // 查询当前款式状态
     const { data: style, error: fetchError } = await supabase
         .from('b_public_style')
-        .select('intent_count, max_intents')
+        .select('*')
         .eq('id', id)
         .single();
 
@@ -117,14 +127,35 @@ router.post('/public/:id/intent', async (req, res) => {
 
     const newCount = style.intent_count + 1;
 
-    // 更新计数（暂时不更新hidden字段，因为该字段可能不存在）
+    // 创建私推记录（状态为locked，表示意向中）
+    const { data: newDemand, error: insertError } = await supabase
+        .from('b_style_demand')
+        .insert({
+            push_type: 'POOL',
+            shop_id: shopId,
+            shop_name: shopName,
+            image_url: style.image_url,
+            name: style.name,
+            remark: '公池意向款',
+            timestamp_label: '刚刚',
+            status: 'locked', // 意向状态
+            source_public_id: id,
+            handler_name: decodeURIComponent(req.get('X-Buyer-Name') || ''), // OPT-1: 记录推款人(处理人)
+            created_at: new Date().toISOString()
+        })
+        .select()
+        .single();
+
+    if (insertError) return res.status(500).json({ error: insertError.message });
+
+    // 更新公池计数
     const { error } = await supabase
         .from('b_public_style')
         .update({ intent_count: newCount })
         .eq('id', id);
 
     if (error) return res.status(500).json({ error: error.message });
-    res.json({ success: true, intentCount: newCount });
+    res.json({ success: true, intentCount: newCount, demand: newDemand });
 });
 
 // POST /api/styles/public/:id/confirm - 从公池接款
@@ -143,7 +174,8 @@ router.post('/public/:id/confirm', async (req, res) => {
         status: 'developing',
         development_status: 'drafting',
         confirm_time: new Date().toISOString(),
-        source_public_id: id // OPT-10: 记录公池来源
+        source_public_id: id, // OPT-10: 记录公池来源
+        handler_name: decodeURIComponent(req.get('X-Buyer-Name') || '') // OPT-1: 记录推款人
     };
 
     const { data, error } = await supabase

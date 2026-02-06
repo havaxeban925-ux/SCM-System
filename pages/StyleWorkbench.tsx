@@ -125,12 +125,33 @@ const StyleWorkbench: React.FC<Props> = ({ availableStyles: propStyles, onConfir
   };
 
   const handleExpressIntent = async (style: PublicStyle) => {
-    const success = await expressIntent(style.id);
+    const userData = localStorage.getItem('merchantUser');
+    const user = userData ? JSON.parse(userData) : null;
+    const currentShopName = user?.shop_name || user?.shops?.[0]?.shop_name || '未知店铺';
+
+    const success = await expressIntent(style.id, shopId, currentShopName);
     if (success) {
-      alert('意向表达成功！');
+      alert('意向表达成功！已添加到私推列表');
+      // 更新公池款式的意向计数
       setPublicStyles(prev => prev.map(s =>
         s.id === style.id ? { ...s, intent_count: s.intent_count + 1 } : s
       ));
+      // 问题3修复：重新加载私推列表（因为后端现在会创建私推记录）
+      try {
+        const privateData = await getPrivateStyles(shopId);
+        setPrivateStyles(privateData.map(toStyleItem));
+      } catch (err) {
+        console.error('Failed to reload private styles:', err);
+      }
+      // 问题4修复：重新加载名额统计
+      if (shopId) {
+        try {
+          const stats = await getQuotaStats(shopId);
+          if (stats) setQuota(stats);
+        } catch (err) {
+          console.error('Failed to reload quota stats:', err);
+        }
+      }
     }
   };
 

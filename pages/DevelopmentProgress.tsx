@@ -188,14 +188,11 @@ const DevelopmentProgress: React.FC<Props> = ({ styles: propStyles, onAbandon, o
     if (confirm('确认提交吗？此操作不可撤回，提交后将进入待审版环节。')) {
       const success = await uploadSpu(activePopup.id, remark);
       if (success) {
+        // 问题11修复：提交后保留记录，不再自动移除
         setStyles(prev => prev.map(s => s.id === activePopup.id ? { ...s, developmentStatus: 'success' as const } : s));
         onUpdateStatus(activePopup.id, 'success');
         resetPopup();
-
-        // 模拟5秒后移除
-        setTimeout(() => {
-          setStyles(prev => prev.filter(s => s.id !== activePopup.id));
-        }, 5000);
+        // 已删除自动移除逻辑，SPU上传后记录保留在商家端
       }
     }
   };

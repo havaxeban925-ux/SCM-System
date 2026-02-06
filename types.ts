@@ -57,7 +57,8 @@ export interface RequestRecord {
   subType: string;
   targetCodes: string[]; // SKC, SPU, or SKU
   submitTime: string;
-  status: 'processing' | 'completed' | 'rejected';
+  status: 'processing' | 'completed' | 'rejected' | 'pending_confirm' | 'pending_recheck' | 'viewed';
+  isUrgent?: boolean;
   pricingDetails?: PricingDetail[];
 }
 

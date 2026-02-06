@@ -1,33 +1,54 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import ExcelJS from 'exceljs';
+import { saveAs } from 'file-saver';
 import { ReplenishmentItem } from '../types';
 import { getRestockOrders, updateQuantity, confirmOrder, shipOrder, confirmArrival } from '../services/restockService';
 import { RestockOrder } from '../lib/supabase';
 
 // 转换数据库格式到前端格式
+
 function toReplenishmentItem(r: RestockOrder): ReplenishmentItem {
+  let status: ReplenishmentItem['status'] = '待商家接单';
+
+  // Map DB status to UI status
+  const dbStatus = String(r.status);
+  switch (dbStatus) {
+    case 'pending': status = '待商家接单'; break;
+    case 'reviewing': status = '待买手复核'; break;
+    case 'producing': status = '生产中'; break;
+    case 'shipped': status = '待买手确认入仓'; break;
+    case 'completed': status = '已确认入仓'; break;
+    case 'cancelled': status = '已取消' as any; break;
+    default: status = '待商家接单';
+  }
+
   return {
     id: r.skc_code,
     name: r.name || '',
     image: r.image_url || '',
     planQty: r.plan_quantity,
     acceptedQty: r.actual_quantity ?? r.plan_quantity,
-    status: r.status,
-    expiryDate: r.expiry_date || '',
+    status: status,
+    expiryDate: r.created_at ? new Date(r.created_at).toLocaleString() : '',
     reductionReason: r.reduction_reason,
-    _dbId: r.id, // 保存数据库ID用于API调用
+    // _dbId NOT included here, handled by caller
   };
 }
 
-// 扩展类型以包含数据库ID
+// 扩展类型以包含数据库ID和加急状态
 interface ExtendedReplenishmentItem extends ReplenishmentItem {
   _dbId?: string;
+  reductionReason?: string;
+  is_urgent?: boolean;
+  shopId?: string;
 }
 
 const ReplenishmentSynergy: React.FC = () => {
   const [items, setItems] = useState<ExtendedReplenishmentItem[]>([]);
   const [activeTab, setActiveTab] = useState<string>('全部状态');
   const [loading, setLoading] = useState(true);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // 加载数据
   useEffect(() => {
@@ -35,7 +56,12 @@ const ReplenishmentSynergy: React.FC = () => {
       setLoading(true);
       try {
         const data = await getRestockOrders();
-        setItems(data.map(r => ({ ...toReplenishmentItem(r), _dbId: r.id })));
+        setItems(data.map(r => ({
+          ...toReplenishmentItem(r),
+          _dbId: r.id,
+          is_urgent: (r as any).is_urgent || false,
+          shopId: (r as any).shop_id || '' // Assuming shop_id is available
+        })));
       } catch (err) {
         console.error('Error loading restock orders:', err);
       } finally {
@@ -46,8 +72,9 @@ const ReplenishmentSynergy: React.FC = () => {
   }, []);
 
   const filteredItems = useMemo(() => {
-    if (activeTab === '全部状态') return items;
-    return items.filter(item => item.status === activeTab);
+    let filtered = activeTab === '全部状态' ? items : items.filter(item => item.status === activeTab);
+    // 加急置顶
+    return filtered.sort((a, b) => (b.is_urgent ? 1 : 0) - (a.is_urgent ? 1 : 0));
   }, [items, activeTab]);
 
   const handleUpdateQty = (id: string, qty: number) => {
@@ -72,6 +99,77 @@ const ReplenishmentSynergy: React.FC = () => {
     }
   };
 
+  // 一键导出待提交清单
+  const handleExportPendingList = async () => {
+    const pendingItems = items.filter(item => item.status === '待商家接单');
+    if (pendingItems.length === 0) {
+      alert('暂无待提交的订单');
+      return;
+    }
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('待提交清单');
+    sheet.columns = [
+      { header: '店铺ID', key: 'shopId', width: 32 },
+      { header: 'SKC编码', key: 'skc', width: 20 },
+      { header: '计划数量', key: 'planQty', width: 12 },
+      { header: '接单数量', key: 'acceptedQty', width: 12 },
+      { header: '砍量理由', key: 'reductionReason', width: 30 },
+    ];
+
+    pendingItems.forEach(item => {
+      sheet.addRow({
+        shopId: item.shopId || '',
+        skc: item.id,
+        planQty: item.planQty,
+        acceptedQty: item.acceptedQty,
+        reductionReason: item.reductionReason || ''
+      });
+    });
+
+    sheet.getRow(1).font = { bold: true };
+    sheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE0E7FF' } };
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    saveAs(new Blob([buffer]), `待提交清单_${new Date().toLocaleDateString()}.xlsx`);
+  };
+
+  // 一键导入待提交清单
+  const handleImportPendingList = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(await file.arrayBuffer());
+    const sheet = workbook.worksheets[0];
+
+    let imported = 0;
+    sheet.eachRow((row, rowNum) => {
+      if (rowNum === 1) return; // Skip header
+      // Index shifted by 1 because of ShopId column
+      const skc = String(row.getCell(2).value || '').trim();
+      const planQty = parseInt(String(row.getCell(3).value || '0'));
+      const acceptedQty = parseInt(String(row.getCell(4).value || '0'));
+      const reason = String(row.getCell(5).value || '').trim();
+
+      if (skc) {
+        // 校验：如果接单数量小于计划数量，必须有砍量理由
+        if (acceptedQty < planQty && !reason) {
+          alert(`导入失败：第 ${rowNum} 行 (SKC: ${skc}) 接单数量小于计划数量，必须填写砍量理由。`);
+          throw new Error('Validation failed'); // Stop iteration
+        }
+
+        // 更新对应SKC
+        setItems(prev => prev.map(item =>
+          item.id === skc ? { ...item, acceptedQty, reductionReason: reason } : item
+        ));
+        imported++;
+      }
+    });
+
+    alert(`导入完成！更新了 ${imported} 条记录。`);
+    e.target.value = '';
+  };
+
   const handleShip = async (item: ExtendedReplenishmentItem) => {
     if (!item._dbId) return;
     const wbNumber = prompt('请输入物流单号(WB号)：');
@@ -84,14 +182,7 @@ const ReplenishmentSynergy: React.FC = () => {
     }
   };
 
-  const handleBuyerConfirm = async (item: ExtendedReplenishmentItem) => {
-    if (!item._dbId) return;
-    const success = await confirmArrival(item._dbId);
-    if (success) {
-      setItems(items.map(i => i.id === item.id ? { ...i, status: '已确认入仓' as ReplenishmentItem['status'] } : i));
-      alert('已确认入仓！');
-    }
-  };
+  // Removed: handleBuyerConfirm is now performed by buyer on their page
 
   const statusCount = (status: string) => items.filter(i => i.status === status).length;
 
@@ -112,9 +203,20 @@ const ReplenishmentSynergy: React.FC = () => {
           <p className="text-slate-500 text-sm">监控补货进度，处理砍量并跟踪物流。</p>
         </div>
         <div className="flex gap-3">
-          <button onClick={() => alert('正在导出...')} className="flex items-center gap-2 rounded-lg h-10 px-5 bg-white border border-slate-200 text-sm font-bold hover:bg-slate-50 transition-colors">
+          <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-2 rounded-lg h-10 px-5 bg-white border border-slate-200 text-sm font-bold hover:bg-slate-50 transition-colors">
+            <span className="material-symbols-outlined text-lg">upload</span>
+            <span>一键导入待提交清单</span>
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".xlsx,.xls"
+            style={{ display: 'none' }}
+            onChange={handleImportPendingList}
+          />
+          <button onClick={handleExportPendingList} className="flex items-center gap-2 rounded-lg h-10 px-5 bg-white border border-slate-200 text-sm font-bold hover:bg-slate-50 transition-colors">
             <span className="material-symbols-outlined text-lg">download</span>
-            <span>导出报表</span>
+            <span>一键导出待提交清单</span>
           </button>
         </div>
       </div>
@@ -122,7 +224,7 @@ const ReplenishmentSynergy: React.FC = () => {
       {/* Classic Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="flex flex-col gap-3 rounded-xl p-6 bg-white border border-slate-200 shadow-sm">
-          <p className="text-slate-500 text-sm font-medium">待备货单据</p>
+          <p className="text-slate-500 text-sm font-medium">待备货清单</p>
           <p className="text-navy-700 text-4xl font-black">{statusCount('待商家接单') + statusCount('待买手复核')}</p>
         </div>
         <div className="flex flex-col gap-3 rounded-xl p-6 bg-white border-l-4 border-l-primary border border-slate-200 shadow-sm">
@@ -161,19 +263,30 @@ const ReplenishmentSynergy: React.FC = () => {
                 <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">计划数</th>
                 <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">商家接单数</th>
                 <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">当前状态</th>
-                <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">预计下架时间</th>
+                <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">下单时间</th>
                 <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider text-right">操作</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {filteredItems.map(item => (
                 <tr key={item.id} className="hover:bg-slate-50/80 transition-colors">
-                  <td className="px-6 py-5 align-top">
+                  <td className="px-6 py-4">
                     <div className="flex items-center gap-4">
-                      <div className="size-14 rounded bg-slate-100 bg-cover bg-center border border-slate-200" style={{ backgroundImage: `url(${item.image})` }}></div>
-                      <div className="flex flex-col">
-                        <span className="text-sm font-bold text-navy-700">{item.id}</span>
-                        <span className="text-xs text-slate-500 mt-0.5">{item.name}</span>
+                      {item.image ? (
+                        <img src={item.image} alt={item.name} className="h-12 w-12 rounded-lg object-cover border border-slate-200" />
+                      ) : (
+                        <div className="h-12 w-12 rounded-lg bg-slate-100 flex items-center justify-center text-slate-400 text-xs">No Img</div>
+                      )}
+                      <div>
+                        <div className="font-bold text-slate-700">{item.id}</div>
+                        {/* 需求：SKC下方显示店铺ID */}
+                        <div className="text-xs text-slate-500 mt-1">店铺ID: <span className="font-mono">{item.shopId || '-'}</span></div>
+
+                        {item.is_urgent && (
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-red-100 text-red-700 mt-1">
+                            加急
+                          </span>
+                        )}
                       </div>
                     </div>
                   </td>
@@ -249,7 +362,7 @@ const ReplenishmentSynergy: React.FC = () => {
                         </button>
                       )}
                       {item.status === '待买手确认入仓' && (
-                        <button onClick={() => handleBuyerConfirm(item)} className="bg-emerald-50 text-emerald-700 border border-emerald-200 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-emerald-100 transition-colors">[模拟] 买手确认入仓</button>
+                        <span className="text-[10px] text-blue-500 font-bold italic">✈️ 已发货，等待买手确认入仓</span>
                       )}
                       {item.status === '已确认入仓' && <span className="text-[10px] text-emerald-600 font-bold italic">✅ 入仓成功</span>}
                       {item.status === '待买手复核' && <span className="text-[10px] text-amber-500 font-bold italic">买手审阅中...</span>}

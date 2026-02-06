@@ -1,25 +1,41 @@
 import React, { useState, useEffect } from 'react';
+import { getHandlerAlias, getHandlerColor } from '../utils/handlerMapping';
 
 interface PushRecord {
-    id: string;
+    id: string; // 使用第一条记录的ID
     link: string;
     image_url: string;
     style_name: string;
     push_type: 'private' | 'public';
-    push_time: string;
+    first_push_time: string;
+    last_push_time: string;
     target_count: number;
     accepted_count: number;
     shops: Array<{
         id: string;
         name: string;
+        key_id?: string;
+        key_name?: string;
         status: 'pending' | 'accepted' | 'rejected';
+        push_time: string;
+        shops: Array<{
+            id: string;
+            name: string;
+            key_id?: string;
+            key_name?: string;
+            status: 'pending' | 'accepted' | 'rejected';
+            push_time: string;
+        }>;
+        handler_name?: string; // OPT-1
     }>;
+    handler_name?: string; // OPT-1
 }
 
 interface Shop {
     id: string;
     shop_name: string;
     key_id?: string;
+    key_name?: string;
 }
 
 const PushHistory: React.FC = () => {
@@ -42,7 +58,7 @@ const PushHistory: React.FC = () => {
 
                 // Fetch push records from b_style_demand
                 const [privateRes, publicRes, shopsRes] = await Promise.all([
-                    fetch(`${API_BASE}/api/styles/private?pageSize=100`),
+                    fetch(`${API_BASE}/api/styles/private?pageSize=500&status=all`), // 获取所有状态的记录
                     fetch(`${API_BASE}/api/styles/public?pageSize=100`),
                     fetch(`${API_BASE}/api/admin/shops?pageSize=1000`)
                 ]);
@@ -51,42 +67,88 @@ const PushHistory: React.FC = () => {
                 const publicData = await publicRes.json();
                 const shopsData = await shopsRes.json();
 
-                // Transform private styles to PushRecord format
-                const privateRecords: PushRecord[] = (privateData.data || []).map((s: any) => ({
-                    id: s.id,
-                    link: s.ref_link || '',
-                    image_url: s.image_url || '',
-                    style_name: s.name || '未命名款式',
-                    push_type: 'private' as const,
-                    push_time: new Date(s.created_at).toLocaleString(),
-                    target_count: 3,
-                    accepted_count: s.status === 'developing' ? 1 : 0,
-                    shops: [{
-                        id: s.shop_id || '',
-                        name: s.shop_name || '未知店铺',
-                        status: s.status === 'developing' ? 'accepted' : 'pending' as 'pending' | 'accepted' | 'rejected'
-                    }]
-                }));
+                // Build Shops Map for easy lookup
+                const shopMap = new Map<string, Shop>();
+                (shopsData.data || []).forEach((s: any) => {
+                    shopMap.set(s.id, {
+                        id: s.id,
+                        shop_name: s.shop_name,
+                        key_id: s.key_id,
+                        key_name: s.key_name || s.key_id // Fallback to ID if name missing
+                    });
+                });
 
-                // Transform public styles to PushRecord format
+                // Group private styles by image_url + name (Visual Identity)
+                const groupedMap = new Map<string, PushRecord>();
+
+                (privateData.data || []).forEach((s: any) => {
+                    // 唯一标识：图片+名称+链接 (如果链接不同视为新款？或者只用图片+名称)
+                    // 这里假设同一批次推款或者同一款，图片和名称是一致的
+                    const key = `${s.image_url}|${s.name}`;
+
+                    if (!groupedMap.has(key)) {
+                        groupedMap.set(key, {
+                            id: s.id,
+                            link: s.ref_link || '',
+                            image_url: s.image_url || '',
+                            style_name: s.name || '未命名款式',
+                            push_type: 'private',
+                            first_push_time: s.created_at,
+                            last_push_time: s.created_at,
+                            target_count: 3, // 接款上限固定为3
+                            accepted_count: 0,
+                            shops: [],
+                            handler_name: s.handler_name // OPT-1
+                        });
+                    }
+
+                    const record = groupedMap.get(key)!;
+                    const createdAt = new Date(s.created_at);
+                    const firstDate = new Date(record.first_push_time);
+                    const lastDate = new Date(record.last_push_time);
+
+                    if (createdAt < firstDate) record.first_push_time = s.created_at;
+                    if (createdAt > lastDate) record.last_push_time = s.created_at;
+
+                    // Determine Status
+                    // API returns: 'new', 'developing' (accepted), 'rejected', 'locked' (new)
+                    let status: 'pending' | 'accepted' | 'rejected' = 'pending';
+                    if (s.status === 'developing') status = 'accepted';
+                    else if (s.status === 'rejected') status = 'rejected';
+
+                    if (status === 'accepted') record.accepted_count++;
+
+                    // Lookup Shop Info (prefer API data if available, fallback to shopMap)
+                    const shopInfo = shopMap.get(s.shop_id) || { shop_name: s.shop_name || '未知店铺' } as Shop;
+
+                    record.shops.push({
+                        id: s.shop_id,
+                        name: s.shop_name || shopInfo.shop_name,
+                        key_id: s.key_id || shopInfo.key_id,
+                        key_name: s.key_name || shopInfo.key_name, // Prefer record's key_name, then shopMap
+                        status: status,
+                        push_time: s.created_at
+                    });
+                });
+
+                const privateRecords = Array.from(groupedMap.values());
+
+                // Transform public styles to PushRecord format (Public styles are usually unique entries in public pool)
                 const publicRecords: PushRecord[] = (publicData.data || []).map((s: any) => ({
                     id: s.id,
                     link: '',
                     image_url: s.image_url || '',
                     style_name: s.name || '未命名款式',
                     push_type: 'public' as const,
-                    push_time: new Date(s.created_at).toLocaleString(),
+                    first_push_time: s.created_at,
+                    last_push_time: s.created_at,
                     target_count: s.max_intents || 3,
                     accepted_count: s.intent_count || 0,
                     shops: []
                 }));
 
                 setRecords([...privateRecords, ...publicRecords]);
-                setShops((shopsData.data || []).map((s: any) => ({
-                    id: s.id,
-                    shop_name: s.shop_name,
-                    key_id: s.key_id
-                })));
+                setShops(Array.from(shopMap.values()));
             } catch (err) {
                 console.error('Error fetching push history:', err);
             } finally {
@@ -102,11 +164,13 @@ const PushHistory: React.FC = () => {
         const typeMatch = filter === 'all' || r.push_type === filter;
         const searchMatch = recordSearchTerm === '' ||
             r.style_name.toLowerCase().includes(recordSearchTerm.toLowerCase()) ||
-            r.shops.some(s => s.name.toLowerCase().includes(recordSearchTerm.toLowerCase()));
+            r.link.toLowerCase().includes(recordSearchTerm.toLowerCase()) ||
+            r.shops.some(s => s.name.toLowerCase().includes(recordSearchTerm.toLowerCase()) || (s.key_name && s.key_name.toLowerCase().includes(recordSearchTerm.toLowerCase())));
         return typeMatch && searchMatch;
     });
     const filteredShops = shops.filter(s =>
-        s.shop_name.toLowerCase().includes(searchTerm.toLowerCase())
+        s.shop_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (s.key_name && s.key_name.toLowerCase().includes(searchTerm.toLowerCase()))
     );
 
     const handleAddPrivate = () => {
@@ -116,6 +180,9 @@ const PushHistory: React.FC = () => {
         }
         if (!detailModal.record) return;
 
+        // 这里仅前端模拟，实际需要调用 API
+        // 但由于 PushHistory 是查看历史，新增私推通常是在 StylesManage 页
+        // 这里暂时不实现真正的 ref-push，或者你可以调用 admin/push/private
         alert(`已新增私推给 ${selectedShops.length} 个店铺`);
         setAddPrivateModal(false);
         setSelectedShops([]);
@@ -140,9 +207,8 @@ const PushHistory: React.FC = () => {
         return 'var(--success)';
     };
 
-    // 计算实际进度（排除已拒绝的，拒绝后可回刷给其他商家）
-    const getAcceptedCount = (record: PushRecord) => {
-        return record.shops.filter(s => s.status === 'accepted').length;
+    const formatDate = (dateStr: string) => {
+        return new Date(dateStr).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
     };
 
     return (
@@ -166,7 +232,7 @@ const PushHistory: React.FC = () => {
                         <span className="material-symbols-outlined" style={{ color: 'var(--text-muted)' }}>search</span>
                         <input
                             type="text"
-                            placeholder="搜索款式名/商家..."
+                            placeholder="搜索款式/KEY/商家..."
                             value={recordSearchTerm}
                             onChange={(e) => setRecordSearchTerm(e.target.value)}
                             style={{ border: '1px solid var(--border-color)', borderRadius: 4, padding: '6px 10px', fontSize: 13 }}
@@ -191,27 +257,60 @@ const PushHistory: React.FC = () => {
                     <table className="data-table">
                         <thead>
                             <tr>
+                                <th style={{ width: 60 }}>处理人</th>
                                 <th>图片</th>
-                                <th>链接/款式</th>
+                                <th>款式名称</th>
+                                <th>参考链接</th>
                                 <th>类型</th>
                                 <th>接款进度</th>
-                                <th>推送时间</th>
+                                <th>首次推送</th>
+                                <th>最近推送</th>
                                 <th>操作</th>
                             </tr>
                         </thead>
                         <tbody>
                             {filteredRecords.map(record => {
+                                // 当前分组中，如果有任何一个子项被拒绝且还没被推入公池，且总数>=3... (原逻辑)
+                                // 这里使用 record.shops 内的统计
                                 const rejectedCount = record.shops.filter(s => s.status === 'rejected').length;
                                 return (
                                     <tr key={record.id}>
+                                        <td>
+                                            {record.handler_name ? (
+                                                <div style={{
+                                                    width: 32,
+                                                    height: 32,
+                                                    borderRadius: '50%',
+                                                    background: getHandlerColor(record.handler_name),
+                                                    color: '#fff',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'center',
+                                                    fontSize: 13,
+                                                    fontWeight: 'bold',
+                                                    boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+                                                }} title={record.handler_name}>
+                                                    {getHandlerAlias(record.handler_name)}
+                                                </div>
+                                            ) : (
+                                                <span style={{ color: '#cbd5e1' }}>-</span>
+                                            )}
+                                        </td>
                                         <td>
                                             <img src={record.image_url} alt="" className="style-image" />
                                         </td>
                                         <td>
                                             <div style={{ fontSize: 13, fontWeight: 500 }}>{record.style_name}</div>
-                                            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
-                                                {record.link.length > 40 ? record.link.slice(0, 40) + '...' : record.link}
-                                            </div>
+                                            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>ID: {record.id.slice(0, 8)}</div>
+                                        </td>
+                                        <td>
+                                            {record.link ? (
+                                                <a href={record.link} target="_blank" rel="noopener noreferrer"
+                                                    style={{ color: 'var(--primary)', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 4 }}>
+                                                    <span className="material-symbols-outlined" style={{ fontSize: 14 }}>link</span>
+                                                    链接
+                                                </a>
+                                            ) : <span style={{ color: '#ccc' }}>无链接</span>}
                                         </td>
                                         <td>
                                             <span style={{
@@ -228,22 +327,27 @@ const PushHistory: React.FC = () => {
                                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                                                 <span style={{
                                                     fontWeight: 600,
-                                                    color: getProgressColor(getAcceptedCount(record))
+                                                    color: getProgressColor(record.accepted_count)
                                                 }}>
-                                                    {getAcceptedCount(record)}/{MAX_ACCEPT}
+                                                    {record.accepted_count}/{MAX_ACCEPT}
                                                 </span>
                                                 <div className="progress-bar" style={{ width: 60 }}>
                                                     <div
                                                         className="progress-bar-fill"
                                                         style={{
-                                                            width: `${(getAcceptedCount(record) / MAX_ACCEPT) * 100}%`,
-                                                            background: getProgressColor(getAcceptedCount(record))
+                                                            width: `${Math.min((record.accepted_count / MAX_ACCEPT) * 100, 100)}%`,
+                                                            background: getProgressColor(record.accepted_count)
                                                         }}
                                                     />
                                                 </div>
                                             </div>
                                         </td>
-                                        <td style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{record.push_time}</td>
+                                        <td style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                                            {formatDate(record.first_push_time)}
+                                        </td>
+                                        <td style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                                            {formatDate(record.last_push_time)}
+                                        </td>
                                         <td>
                                             <div className="action-buttons">
                                                 <button
@@ -269,7 +373,7 @@ const PushHistory: React.FC = () => {
                     </table>
                 )}
 
-                {records.some(r => r.push_type === 'private' && r.shops.filter(s => s.status === 'rejected').length >= 3) && (
+                {filteredRecords.some(r => r.push_type === 'private' && r.shops.filter(s => s.status === 'rejected').length >= 3) && (
                     <div className="alert-banner warning" style={{ marginTop: 16 }}>
                         <span className="material-symbols-outlined">lightbulb</span>
                         <span>有款式被 3 家以上商家拒绝，建议推入公池扩大曝光</span>
@@ -292,31 +396,41 @@ const PushHistory: React.FC = () => {
                                 <img src={detailModal.record.image_url} alt="" style={{ width: 80, height: 80, borderRadius: 8 }} />
                                 <div>
                                     <h3 style={{ fontSize: 15, marginBottom: 4 }}>{detailModal.record.style_name}</h3>
-                                    <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>{detailModal.record.link}</p>
+                                    {detailModal.record.link && (
+                                        <a href={detailModal.record.link} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: 'var(--primary)' }}>
+                                            {detailModal.record.link}
+                                        </a>
+                                    )}
                                 </div>
                             </div>
 
                             <h4 style={{ fontSize: 13, marginBottom: 12 }}>商家接款情况</h4>
-                            <table className="data-table">
-                                <thead>
-                                    <tr>
-                                        <th>店铺名称</th>
-                                        <th>状态</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {detailModal.record.shops.map(shop => (
-                                        <tr key={shop.id}>
-                                            <td>{shop.name}</td>
-                                            <td>
-                                                <span className={`status-badge ${shop.status === 'accepted' ? 'completed' : shop.status === 'rejected' ? 'rejected' : 'processing'}`}>
-                                                    {shop.status === 'accepted' ? '已接款' : shop.status === 'rejected' ? '已拒绝' : '待处理'}
-                                                </span>
-                                            </td>
+                            <div style={{ maxHeight: 300, overflowY: 'auto' }}>
+                                <table className="data-table">
+                                    <thead>
+                                        <tr>
+                                            <th>KEY 名称</th>
+                                            <th>店铺名称</th>
+                                            <th>推送时间</th>
+                                            <th>状态</th>
                                         </tr>
-                                    ))}
-                                </tbody>
-                            </table>
+                                    </thead>
+                                    <tbody>
+                                        {detailModal.record.shops.map(shop => (
+                                            <tr key={shop.id}>
+                                                <td style={{ fontWeight: 600 }}>{shop.key_name || '-'}</td>
+                                                <td>{shop.name}</td>
+                                                <td style={{ fontSize: 11, color: 'var(--text-muted)' }}>{formatDate(shop.push_time)}</td>
+                                                <td>
+                                                    <span className={`status-badge ${shop.status === 'accepted' ? 'completed' : shop.status === 'rejected' ? 'rejected' : 'processing'}`}>
+                                                        {shop.status === 'accepted' ? '已接款' : shop.status === 'rejected' ? '已拒绝' : '待处理'}
+                                                    </span>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
                         </div>
                         <div className="modal-footer">
                             <button className="btn btn-outline" onClick={() => setDetailModal({ show: false, record: null })}>
@@ -364,7 +478,10 @@ const PushHistory: React.FC = () => {
                                                     prev.includes(shop.id) ? prev.filter(s => s !== shop.id) : [...prev, shop.id]
                                                 )}
                                             />
-                                            <span style={{ flex: 1 }}>{shop.shop_name}</span>
+                                            <span style={{ flex: 1 }}>
+                                                {shop.shop_name}
+                                                {shop.key_name && <span style={{ color: 'var(--text-muted)', fontSize: 11, marginLeft: 6 }}>({shop.key_name})</span>}
+                                            </span>
                                         </label>
                                     ))}
                                 </div>

@@ -136,7 +136,7 @@ router.get('/pending', async (_, res) => {
 
 // POST /api/auth/approve - 审批通过
 router.post('/approve', async (req, res) => {
-    const { userId, keyId, shopCode, level } = req.body;
+    const { userId, keyId, keyName, shopCode, level } = req.body;
 
     if (!userId) {
         return res.status(400).json({ error: 'userId is required' });
@@ -144,6 +144,7 @@ router.post('/approve', async (req, res) => {
 
     // Trim inputs to avoid whitespace issues
     const safeKeyId = keyId ? keyId.trim() : 'KEY-NEW';
+    const safeKeyName = keyName ? keyName.trim() : safeKeyId; // 如果没有 keyName，使用 keyId
     const safeShopCode = shopCode ? shopCode.trim() : '';
 
     try {
@@ -174,9 +175,10 @@ router.post('/approve', async (req, res) => {
                         shop_name: user.shop_name,
                         role: 'FACTORY',
                         key_id: safeKeyId,
+                        key_name: safeKeyName,  // 新增: KEY 商号名称
                         shop_code: safeShopCode,
                         level: level || 'N',
-                        phone: ''
+                        phone: user.username  // 使用用户名(手机号)作为联系电话
                     });
 
                 if (insertShopError) {

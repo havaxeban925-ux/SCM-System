@@ -33,11 +33,13 @@ const PushManage: React.FC = () => {
     const [publicVisual, setPublicVisual] = useState('');
     const [publicStyle, setPublicStyle] = useState('');
 
-    // Shop Selection
+    // Shop Selection - Two-level: KEY -> ShopID
     const [shops, setShops] = useState<Shop[]>([]);
     const [searchTerm, setSearchTerm] = useState('');
-    const [selectedShops, setSelectedShops] = useState<string[]>([]);
-    const [showShopOptions, setShowShopOptions] = useState(false);
+    const [selectedKeys, setSelectedKeys] = useState<string[]>([]); // 选中的 KEY
+    const [selectedShopIds, setSelectedShopIds] = useState<string[]>([]); // 选中的店铺 ID
+    const [showKeySelector, setShowKeySelector] = useState(false); // 显示 KEY 选择器
+    const [showShopSelector, setShowShopSelector] = useState(false); // 显示店铺选择器
 
     // Public Pool List
     const [publicStyles, setPublicStyles] = useState<PushRecord[]>([]);
@@ -105,27 +107,19 @@ const PushManage: React.FC = () => {
         if (!privateImage) return alert('请上传图片');
         if (!privateVisual) return alert('请选择视觉');
         if (!privateStyle) return alert('请选择风格');
-        // selectedShops now holds selected KEYs (strings)
-        if (selectedShops.length === 0) return alert('请选择推送 KEY');
+        if (selectedKeys.length === 0) return alert('请选择推送 KEY');
+        if (selectedShopIds.length === 0) return alert('请选择具体店铺');
 
         try {
-            // Find all shop IDs belonging to the selected KEYS
-            // selectedShops here is actually an array of KEY_IDs
-            const targetShopIds = shops
-                .filter(s => s.key_id && selectedShops.includes(s.key_id))
-                .map(s => s.id);
-
-            if (targetShopIds.length === 0) {
-                return alert('所选 KEY 下暂无任何店铺，无法推送');
-            }
 
             const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
             const res = await fetch(`${API_BASE}/api/admin/push/private`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    shopIds: targetShopIds,
+                    shopIds: selectedShopIds, // 直接使用用户选中的店铺 ID
                     imageUrl: privateImage,
+                    refLink: privateLink, // 问题3修复：传递参考链接
                     name: `私推款式-${new Date().toLocaleTimeString()}`, // 临时自动命名
                     remark: privateRemark,
                     tags: [privateVisual, privateStyle],
@@ -139,7 +133,7 @@ const PushManage: React.FC = () => {
                 return;
             }
 
-            alert(`私推成功！\n已推送给 ${selectedShops.length} 个KEY (共 ${targetShopIds.length} 家店铺)`);
+            alert(`私推成功！\n已推送给 ${selectedKeys.length} 个KEY (共 ${selectedShopIds.length} 家店铺)`);
 
             // Clear form
             setPrivateImage('');
@@ -147,7 +141,8 @@ const PushManage: React.FC = () => {
             setPrivateRemark('');
             setPrivateVisual('');
             setPrivateStyle('');
-            setSelectedShops([]);
+            setSelectedKeys([]);
+            setSelectedShopIds([]);
         } catch (err: any) {
             alert('请求失败，请检查网络或后端');
             console.error(err);
@@ -268,7 +263,7 @@ const PushManage: React.FC = () => {
 
                         <div className="form-group">
                             <label className="form-label">选择推送 KEY <span style={{ color: 'red' }}>*</span></label>
-                            <div className="search-box" onClick={() => setShowShopOptions(true)}>
+                            <div className="search-box" onClick={() => setShowKeySelector(true)}>
                                 <span className="material-symbols-outlined">search</span>
                                 <input
                                     type="text"
@@ -276,12 +271,12 @@ const PushManage: React.FC = () => {
                                     placeholder="搜索 KEY..."
                                     value={searchTerm}
                                     onChange={e => setSearchTerm(e.target.value)}
-                                    onFocus={() => setShowShopOptions(true)}
+                                    onFocus={() => setShowKeySelector(true)}
                                 />
-                                <span className="selected-count">已选: {selectedShops.length} 个KEY</span>
+                                <span className="selected-count">已选: {selectedKeys.length} 个KEY</span>
                             </div>
 
-                            {showShopOptions && (
+                            {showKeySelector && (
                                 <div className="shop-select-list">
                                     {/* 按 KEY 分组并去重后的列表 - 处理空 key_id */}
                                     {Object.values(shops.reduce((acc, shop) => {
@@ -300,7 +295,7 @@ const PushManage: React.FC = () => {
                                         })
                                         .map(shop => {
                                             const keyId = shop.key_id!;
-                                            const isSelected = selectedShops.includes(keyId);
+                                            const isSelected = selectedKeys.includes(keyId);
                                             return (
                                                 <label
                                                     key={keyId}
@@ -311,11 +306,29 @@ const PushManage: React.FC = () => {
                                                         type="checkbox"
                                                         checked={isSelected}
                                                         onChange={() => {
-                                                            setSelectedShops(prev =>
-                                                                prev.includes(keyId)
+                                                            setSelectedKeys(prev => {
+                                                                const isCurrentlySelected = prev.includes(keyId);
+                                                                const newKeys = isCurrentlySelected
                                                                     ? prev.filter(k => k !== keyId)
-                                                                    : [...prev, keyId]
-                                                            );
+                                                                    : [...prev, keyId];
+
+                                                                // 如果取消选择KEY，移除该KEY下的所有店铺
+                                                                if (isCurrentlySelected) {
+                                                                    const shopsToRemove = shops
+                                                                        .filter(s => s.key_id === keyId)
+                                                                        .map(s => s.id);
+                                                                    setSelectedShopIds(prev =>
+                                                                        prev.filter(id => !shopsToRemove.includes(id))
+                                                                    );
+                                                                }
+
+                                                                // 自动展开店铺选择器
+                                                                if (newKeys.length > 0) {
+                                                                    setShowShopSelector(true);
+                                                                }
+
+                                                                return newKeys;
+                                                            });
                                                         }}
                                                     />
                                                     <span style={{ flex: 1, fontWeight: 'bold', whiteSpace: 'nowrap', overflow: 'visible' }}>{keyId}</span>
@@ -328,6 +341,116 @@ const PushManage: React.FC = () => {
                                 </div>
                             )}
                         </div>
+
+                        {/* 新增：店铺选择区域 */}
+                        {selectedKeys.length > 0 && (
+                            <div className="form-group">
+                                <label className="form-label">选择具体店铺 <span style={{ color: 'red' }}>*</span></label>
+                                <div style={{ fontSize: 12, color: '#666', marginBottom: 8 }}>
+                                    已选 {selectedShopIds.length} 家店铺
+                                </div>
+
+                                <div className="shop-select-list" style={{ maxHeight: 300 }}>
+                                    {selectedKeys.map(keyId => {
+                                        const keyShops = shops.filter(s => s.key_id === keyId);
+                                        const selectedCount = keyShops.filter(s => selectedShopIds.includes(s.id)).length;
+
+                                        return (
+                                            <div key={keyId} style={{ marginBottom: 12 }}>
+                                                {/* KEY 标题行 */}
+                                                <div style={{
+                                                    padding: '8px 12px',
+                                                    background: 'rgba(99, 102, 241, 0.05)',
+                                                    borderRadius: 6,
+                                                    display: 'flex',
+                                                    justifyContent: 'space-between',
+                                                    alignItems: 'center',
+                                                    marginBottom: 4
+                                                }}>
+                                                    <span style={{ fontWeight: 'bold', fontSize: 13 }}>
+                                                        {keyId} ({selectedCount}/{keyShops.length})
+                                                    </span>
+                                                    <div style={{ display: 'flex', gap: 8 }}>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                const keyShopIds = keyShops.map(s => s.id);
+                                                                setSelectedShopIds(prev => {
+                                                                    const filtered = prev.filter(id => !keyShopIds.includes(id));
+                                                                    return [...filtered, ...keyShopIds];
+                                                                });
+                                                            }}
+                                                            style={{
+                                                                fontSize: 11,
+                                                                padding: '2px 8px',
+                                                                border: '1px solid #ddd',
+                                                                borderRadius: 4,
+                                                                background: 'white',
+                                                                cursor: 'pointer'
+                                                            }}
+                                                        >
+                                                            全选
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                const keyShopIds = keyShops.map(s => s.id);
+                                                                setSelectedShopIds(prev =>
+                                                                    prev.filter(id => !keyShopIds.includes(id))
+                                                                );
+                                                            }}
+                                                            style={{
+                                                                fontSize: 11,
+                                                                padding: '2px 8px',
+                                                                border: '1px solid #ddd',
+                                                                borderRadius: 4,
+                                                                background: 'white',
+                                                                cursor: 'pointer'
+                                                            }}
+                                                        >
+                                                            取消
+                                                        </button>
+                                                    </div>
+                                                </div>
+
+                                                {/* 店铺列表 */}
+                                                {keyShops.map(shop => {
+                                                    const isSelected = selectedShopIds.includes(shop.id);
+                                                    return (
+                                                        <label
+                                                            key={shop.id}
+                                                            className={`shop-select-item ${isSelected ? 'selected' : ''}`}
+                                                            style={{
+                                                                display: 'flex',
+                                                                alignItems: 'center',
+                                                                gap: 8,
+                                                                padding: '6px 12px 6px 24px'
+                                                            }}
+                                                        >
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={isSelected}
+                                                                onChange={() => {
+                                                                    setSelectedShopIds(prev =>
+                                                                        prev.includes(shop.id)
+                                                                            ? prev.filter(id => id !== shop.id)
+                                                                            : [...prev, shop.id]
+                                                                    );
+                                                                }}
+                                                            />
+                                                            <span style={{ flex: 1, fontSize: 12 }}>{shop.shop_name}</span>
+                                                            <span style={{ fontSize: 10, color: '#999', fontFamily: 'monospace' }}>
+                                                                {shop.id}
+                                                            </span>
+                                                        </label>
+                                                    );
+                                                })}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        )}
 
                         <div className="form-group">
                             <label className="form-label">备注</label>

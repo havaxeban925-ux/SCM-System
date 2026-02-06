@@ -57,10 +57,10 @@ export async function createAndConfirmPublicStyle(publicStyle: PublicStyle): Pro
     }
 }
 
-// 表达意向（公池）
-export async function expressIntent(id: string): Promise<boolean> {
+// 表达意向（公池）- 问题3修复：传递shopId和shopName
+export async function expressIntent(id: string, shopId: string, shopName: string): Promise<boolean> {
     try {
-        await api.post(`/api/styles/public/${id}/intent`);
+        await api.post(`/api/styles/public/${id}/intent`, { shopId, shopName });
         return true;
     } catch (error) {
         console.error('Error expressing intent:', error);

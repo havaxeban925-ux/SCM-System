@@ -3,9 +3,10 @@ import { RequestRecord } from '../lib/supabase';
 import { PaginatedResponse } from '../types';
 
 // 获取申请记录列表
-export async function getRequestRecords(): Promise<RequestRecord[]> {
+export async function getRequestRecords(shopName?: string): Promise<RequestRecord[]> {
     try {
-        const res = await api.get<PaginatedResponse<RequestRecord>>('/api/requests');
+        const url = shopName ? `/api/requests?shopName=${encodeURIComponent(shopName)}` : '/api/requests';
+        const res = await api.get<PaginatedResponse<RequestRecord>>(url);
         return res.data || [];
     } catch (error) {
         console.error('Error fetching request records:', error);
@@ -36,17 +37,15 @@ export async function createQuoteRequest(
 export async function createSamePriceRequest(
     shopName: string,
     items: Array<{
-        targetCode: string;
-        refCode: string;
         refPrice: string;
         suggestedPrice: string;
     }>
-): Promise<RequestRecord | null> {
+): Promise<RequestRecord> { // Return type changed: not null
     try {
         return await api.post<RequestRecord>('/api/requests/same-price', { shopName, items });
     } catch (error) {
         console.error('Error creating same price request:', error);
-        return null;
+        throw error; // Rethrow to let UI handle it
     }
 }
 
@@ -92,6 +91,17 @@ export async function submitSecondaryReview(
         return true;
     } catch (error) {
         console.error('Error submitting secondary review:', error);
+        return false;
+    }
+}
+
+// 更新申请加急状态
+export async function updateRequestUrgentStatus(id: string, isUrgent: boolean): Promise<boolean> {
+    try {
+        await api.patch(`/api/requests/${id}/urgent`, { isUrgent });
+        return true;
+    } catch (error) {
+        console.error('Error updating urgent status:', error);
         return false;
     }
 }

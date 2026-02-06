@@ -24,10 +24,14 @@ const StyleManage: React.FC = () => {
     const loadStyles = async () => {
         setLoading(true);
         try {
-            const [privateStyles, devStyles] = await Promise.all([
-                api.get<StyleItem[]>('/api/styles/private'),
-                api.get<StyleItem[]>('/api/development'),
+            const [privateRes, devRes] = await Promise.all([
+                api.get<{ data?: StyleItem[] } | StyleItem[]>('/api/styles/private').catch(() => []),
+                api.get<{ data?: StyleItem[] } | StyleItem[]>('/api/development').catch(() => []),
             ]);
+
+            const privateStyles = Array.isArray(privateRes) ? privateRes : (privateRes?.data || []);
+            const devStyles = Array.isArray(devRes) ? devRes : (devRes?.data || []);
+
             setStyles([...privateStyles, ...devStyles]);
         } catch (err) {
             console.error('Failed to load styles:', err);

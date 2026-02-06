@@ -4,10 +4,12 @@ import { supabase } from '../lib/supabase';
 const router = Router();
 
 // GET /api/development - 获取开发中款式（支持分页和状态筛选）
+// 问题5修复：添加shopId过滤实现商家数据隔离
 router.get('/', async (req, res) => {
     const page = parseInt(req.query.page as string) || 1;
     const pageSize = parseInt(req.query.pageSize as string) || 50;
     const devStatus = req.query.status as string;
+    const shopId = req.query.shopId as string; // 问题5：商家数据隔离
     const offset = (page - 1) * pageSize;
 
     let query = supabase
@@ -17,6 +19,8 @@ router.get('/', async (req, res) => {
         .order('created_at', { ascending: false })
         .range(offset, offset + pageSize - 1);
 
+    // 问题5：如果提供了shopId，则只返回该商家的数据
+    if (shopId) query = query.eq('shop_id', shopId);
     if (devStatus) query = query.eq('development_status', devStatus);
 
     const { data, error, count } = await query;

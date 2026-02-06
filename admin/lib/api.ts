@@ -8,7 +8,7 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
         ...options,
         headers: {
             'Content-Type': 'application/json',
-            'X-Buyer-Name': currentBuyer,
+            'X-Buyer-Name': encodeURIComponent(currentBuyer),
             ...options?.headers,
         },
     });

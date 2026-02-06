@@ -1,105 +1,88 @@
 import React, { useState, useEffect } from 'react';
 import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
+import { getHandlerAlias, getHandlerColor } from '../utils/handlerMapping';
+// import { updateRequestUrgentStatus } from '../../services/requestService'; // Unused
 
 interface PricingOrder {
     id: string;
+    order_no?: string; // Add order_no
     shop_name: string;
     sub_type: '同款同价' | '申请涨价' | '毛织类核价' | '非毛织类核价';
     skc_codes: string[];
     submit_time: string;
-    status: '未处理' | '处理中' | '已处理' | '待复核';
+    status: '未处理' | '处理中' | '待确认' | '待复核' | '已完成';
     applied_price?: number;
-    audited_price?: number;
-    review_price?: number; // 复核价格
+    initial_price?: number;  // 初核价格
+    final_price?: number;    // 最终价格
+    reason?: string;         // 商家拒绝原因
+    is_urgent?: boolean;     // 是否加急
+    pricing_details?: any[]; // Full details
+    handler_name?: string;   // 处理人
 }
 
 const PricingOrderPage: React.FC = () => {
     const [orders, setOrders] = useState<PricingOrder[]>([]);
 
+    // ✅ Phase 1 优化: 数据刷新函数
+    const refreshOrders = async () => {
+        try {
+            const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+            const res = await fetch(`${API_BASE}/api/requests?type=pricing&pageSize=100`);
+            if (!res.ok) throw new Error('Failed to fetch pricing orders');
+            const data = await res.json();
+
+            const mappedOrders: PricingOrder[] = (data.data || []).map((item: any) => {
+                const detail = item.pricing_details?.[0] || {};
+                return {
+                    id: item.id,
+                    order_no: item.order_no,
+                    shop_name: item.shop_name || '未知店铺',
+                    sub_type: item.sub_type,
+                    skc_codes: item.target_codes || [],
+                    submit_time: item.submit_time ? new Date(item.submit_time).toLocaleString() : '',
+                    // 状态映射
+                    status: (
+                        item.status === 'pending' ? '未处理' :
+                            item.status === 'processing' ? '处理中' :
+                                item.status === 'pending_confirm' ? '待确认' :
+                                    item.status === 'pending_recheck' ? '待复核' :
+                                        item.status === 'completed' ? '已完成' : '未处理'
+                    ) as PricingOrder['status'],
+                    applied_price: detail.appliedPrice || 0,
+                    initial_price: item.initial_price,
+                    final_price: item.final_price,
+                    reason: item.reason,
+                    is_urgent: item.is_urgent,
+                    pricing_details: item.pricing_details || [],
+                    handler_name: item.handler_name
+                };
+            });
+            setOrders(mappedOrders);
+        } catch (error) {
+            console.error('Error refreshing pricing orders:', error);
+        }
+    };
+
     useEffect(() => {
-        const fetchOrders = async () => {
-            try {
-                const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
-                const res = await fetch(`${API_BASE}/api/requests?type=pricing&pageSize=100`);
-                if (!res.ok) throw new Error('Failed to fetch pricing orders');
-                const data = await res.json();
-
-                const mappedOrders: PricingOrder[] = (data.data || []).map((item: any) => {
-                    const detail = item.pricing_details?.[0] || {};
-                    return {
-                        id: item.id,
-                        shop_name: item.shop_name || '未知店铺',
-                        sub_type: item.sub_type,
-                        skc_codes: item.target_codes || [],
-                        submit_time: item.submit_time ? new Date(item.submit_time).toLocaleString() : '',
-                        status: item.status === 'processing' ? '处理中' :
-                            item.status === 'completed' ? '已处理' :
-                                item.status === 'rejected' ? '已处理' : '未处理', // Map 'approved'/'rejected' to '已处理' or keep statuses? UI uses: 未处理, 处理中, 已处理, 待复核
-                        applied_price: detail.appliedPrice || 0,
-                        audited_price: detail.buyerPrice,
-                        review_price: detail.secondPrice
-                    };
-                });
-                setOrders(mappedOrders);
-            } catch (error) {
-                console.error('Error fetching pricing orders:', error);
-            }
-        };
-
-        fetchOrders();
+        refreshOrders();
     }, []);
 
-    const [statusFilter, setStatusFilter] = useState<'all' | '未处理' | '处理中' | '已处理' | '待复核'>('all');
+    const [statusFilter, setStatusFilter] = useState<'all' | '未处理' | '处理中' | '待确认' | '待复核' | '已完成'>('all');
     const [typeFilter, setTypeFilter] = useState<'all' | '同款同价' | '申请涨价' | '毛织类核价' | '非毛织类核价'>('all');
     const [detailModal, setDetailModal] = useState<{ show: boolean; order: PricingOrder | null }>({ show: false, order: null });
-    const [reviewModal, setReviewModal] = useState<{ show: boolean; order: PricingOrder | null }>({ show: false, order: null });
+    const [reviewModal, setReviewModal] = useState<{ show: boolean; order: PricingOrder | null; type: 'initial' | 'force' }>({ show: false, order: null, type: 'initial' });
     const [reviewPrice, setReviewPrice] = useState('');
+    const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
 
     const filteredOrders = orders.filter(o => {
         const statusMatch = statusFilter === 'all' || o.status === statusFilter;
         const typeMatch = typeFilter === 'all' || o.sub_type === typeFilter;
         return statusMatch && typeMatch;
     });
+    // ...
 
-    // 点击处理 -> 状态变为处理中
-    const handleProcess = (id: string) => {
-        setOrders(orders.map(o => o.id === id ? { ...o, status: '处理中' as const } : o));
-        alert('已开始处理，状态变为"处理中"');
-    };
-
-    // 初核/复核 -> 状态变为已处理
-    const handleInitialReview = (id: string) => {
-        const order = orders.find(o => o.id === id);
-        if (order?.status === '待复核') {
-            setReviewModal({ show: true, order });
-        } else {
-            setOrders(orders.map(o => o.id === id ? { ...o, status: '已处理' as const } : o));
-            alert('初核完成，状态变为"已处理"');
-        }
-    };
-
-    // 提交复核价格
-    const handleSubmitReview = () => {
-        if (!reviewPrice || !reviewModal.order) return;
-        setOrders(orders.map(o =>
-            o.id === reviewModal.order!.id
-                ? { ...o, status: '已处理' as const, review_price: parseFloat(reviewPrice) }
-                : o
-        ));
-        setReviewModal({ show: false, order: null });
-        setReviewPrice('');
-        alert('复核完成');
-    };
-
-    // 驳回
-    const handleReject = (id: string) => {
-        if (!confirm('确定驳回该工单？')) return;
-        setOrders(orders.filter(o => o.id !== id));
-        alert('已驳回');
-    };
-
-    // OPT-2: 一键导出未处理工单为Excel
+    // Export Logic
     const handleExport = async () => {
         const pending = orders.filter(o => o.status === '未处理' || o.status === '处理中');
         if (pending.length === 0) {
@@ -113,35 +96,72 @@ const PricingOrderPage: React.FC = () => {
 
             // 设置列
             worksheet.columns = [
-                { header: '工单ID', key: 'id', width: 40 },
-                { header: '店铺名称', key: 'shop_name', width: 20 },
-                { header: '工单类型', key: 'sub_type', width: 15 },
-                { header: 'SKC编码', key: 'skc_codes', width: 30 },
-                { header: '申请价格', key: 'applied_price', width: 12 },
-                { header: '核价结果', key: 'result_price', width: 12 },  // 留空给核价师填
-                { header: '备注', key: 'remark', width: 30 },  // 留空给核价师填
-                { header: '提交时间', key: 'submit_time', width: 20 },
+                { header: '需申请skc', key: 'skc', width: 25 },
+                { header: '目标价格', key: 'target_price', width: 15 },
+                { header: '人民币/美元', key: 'currency', width: 15 },
+                { header: '买手申诉内容', key: 'reason', width: 50 },
+                { header: '核价师价格', key: 'auditor_price', width: 15 }, // Column E
+                { header: 'Order ID', key: 'order_id', width: 0, hidden: true }, // Column F (Hidden key)
             ];
 
             // 设置表头样式
             worksheet.getRow(1).eachCell((cell) => {
                 cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4F81BD' } };
                 cell.font = { color: { argb: 'FFFFFFFF' }, bold: true };
-                cell.alignment = { horizontal: 'center' };
+                cell.alignment = { horizontal: 'center', vertical: 'middle' };
             });
 
             // 添加数据行
+            let currentRow = 2;
+
             pending.forEach(order => {
-                worksheet.addRow({
-                    id: order.id,
-                    shop_name: order.shop_name,
-                    sub_type: order.sub_type,
-                    skc_codes: order.skc_codes.join(', '),
-                    applied_price: order.applied_price || '',
-                    result_price: '', // 留空给核价师填
-                    remark: '', // 留空给核价师填
-                    submit_time: order.submit_time,
+                // Determine items
+                const items = order.pricing_details && order.pricing_details.length > 0
+                    ? order.pricing_details
+                    : order.skc_codes.map(code => ({
+                        skc: code,
+                        appliedPrice: order.applied_price,
+                        buyerPrice: order.applied_price,
+                        refCode: '', // Fallback
+                    }));
+
+                const startRow = currentRow;
+
+                // Prepare "Appeal Content" summary string
+                const firstItem = items[0] || {};
+                const allSkcs = items.map((i: any) => i.skc).join(' ');
+                const sysPrice = firstItem.appliedPrice || order.applied_price || 0;
+                const refCode = firstItem.refCode || '未知';
+                const refPrice = firstItem.buyerPrice || 0;
+                const targetPrice = refPrice > 0 ? refPrice : sysPrice;
+
+                const appealContent = `skc:${allSkcs}，系统建议价${sysPrice}元，同款同面料/复色skc:${refCode}，价格${refPrice}元，申请同款同价${targetPrice}元`;
+
+                items.forEach((item: any) => {
+                    const itemTargetPrice = item.buyerPrice || item.appliedPrice || 0;
+                    worksheet.addRow({
+                        skc: item.skc,
+                        target_price: itemTargetPrice,
+                        currency: '人民币',
+                        reason: appealContent,
+                        auditor_price: '', // Default Empty
+                        order_id: order.id // Hidden ID for import matching
+                    });
+                    currentRow++;
                 });
+
+                const endRow = currentRow - 1;
+
+                // Merge "买手申诉内容" (D) and "核价师价格" (E) columns
+                if (endRow > startRow) {
+                    worksheet.mergeCells(`D${startRow}:D${endRow}`);
+                    worksheet.mergeCells(`E${startRow}:E${endRow}`);
+                }
+
+                // Vertical align center for all
+                for (let r = startRow; r <= endRow; r++) {
+                    worksheet.getRow(r).alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+                }
             });
 
             // 导出
@@ -150,25 +170,103 @@ const PricingOrderPage: React.FC = () => {
             const date = new Date().toISOString().slice(0, 10);
             saveAs(blob, `核价工单-${date}.xlsx`);
 
-            // 导出后状态变为处理中
             setOrders(orders.map(o => o.status === '未处理' ? { ...o, status: '处理中' as const } : o));
-            alert(`已导出 ${pending.length} 个工单，状态已变为"处理中"`);
+            // alert(`已导出 ${pending.length} 个工单，状态已变为"处理中"`);
         } catch (error) {
             console.error('Export error:', error);
             alert('导出失败，请重试');
         }
     };
 
-    // 一键导入核价师结果
-    const handleImport = () => {
-        // 模拟导入
-        const processing = orders.filter(o => o.status === '处理中');
-        if (processing.length === 0) {
-            alert('没有处理中的工单');
-            return;
+    // 文件上传处理 (Real Import)
+    const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        try {
+            const workbook = new ExcelJS.Workbook();
+            const arrayBuffer = await file.arrayBuffer();
+            await workbook.xlsx.load(arrayBuffer);
+            const worksheet = workbook.getWorksheet(1);
+            if (!worksheet) throw new Error('Invalid Excel file');
+
+            const updates: Record<string, number> = {};
+            const processIds: string[] = [];
+            let debugInfo = '';
+
+            worksheet.eachRow((row, rowNumber) => {
+                if (rowNumber === 1) return; // Skip header
+
+                // Column F (6) is Order ID, Column E (5) is Auditor Price
+                const orderIdVal = row.getCell(6).value;
+                const priceVal = row.getCell(5).value;
+
+                if (!orderIdVal) return;
+
+                const orderId = orderIdVal.toString().trim();
+
+                // Try to parse price
+                if (priceVal) {
+                    // Handle cases where price might include "¥" or "," or text
+                    // If it's a number object or string
+                    let priceStr = priceVal.toString();
+                    // Keep only numbers and dot
+                    priceStr = priceStr.replace(/[^\d.]/g, '');
+
+                    const price = parseFloat(priceStr);
+                    if (!isNaN(price) && price > 0) {
+                        updates[orderId] = price;
+                        if (!processIds.includes(orderId)) processIds.push(orderId);
+                    } else {
+                        if (rowNumber < 5) debugInfo += `Row ${rowNumber}: Invalid Price '${priceVal}'\n`;
+                    }
+                } else {
+                    if (rowNumber < 5) debugInfo += `Row ${rowNumber}: No Price\n`;
+                }
+            });
+
+            if (Object.keys(updates).length === 0) {
+                alert(`未找到有效的核价数据。\n请检查：\n1. 是否在E列填写了价格\n2. 是否使用了导出的完整文件(含F列隐藏ID)\n\n调试信息 (前5行):\n${debugInfo || '无数据'}`);
+                return;
+            }
+
+            // Batch update
+            let successCount = 0;
+            // Show loading or optimistic UI? For now just blocking alert at end.
+
+            for (const id of processIds) {
+                const price = updates[id];
+                try {
+                    const res = await fetch(`${API_BASE}/api/requests/${id}/initial-review`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ initialPrice: price }), // Fix payload key
+                    });
+                    if (res.ok) successCount++;
+                } catch (err) {
+                    console.error(`Failed to update order ${id}`, err);
+                }
+            }
+
+            if (successCount === 0) {
+                alert('导入处理完成，但所有提交均失败。请检查网络或后端日志。');
+            } else {
+                alert(`成功导入并处理 ${successCount} 个工单`);
+                await refreshOrders();
+            }
+
+        } catch (error) {
+            console.error('Import error:', error);
+            alert('导入失败，请检查文件格式');
+        } finally {
+            // Reset input
+            e.target.value = '';
         }
-        setOrders(orders.map(o => o.status === '处理中' ? { ...o, status: '已处理' as const } : o));
-        alert(`已导入 ${processing.length} 个工单的核价结果，状态已变为"已处理"`);
+    };
+
+    // 一键导入核价师结果 (Trigger)
+    const handleImportClick = () => {
+        document.getElementById('import-input')?.click();
     };
 
     const getSubTypeColor = (subType: string) => {
@@ -185,14 +283,150 @@ const PricingOrderPage: React.FC = () => {
         switch (status) {
             case '未处理': return 'processing';
             case '处理中': return 'developing';
-            case '已处理': return 'completed';
-            case '待复核': return 'helping';
+            case '待确认': return 'helping';      // 等待商家确认
+            case '待复核': return 'processing';   // 商家拒绝，待复核
+            case '已完成': return 'completed';
             default: return 'processing';
         }
     };
 
+    // === Missing Handlers ===
+    const handleProcess = async (id: string) => {
+        try {
+            await fetch(`${API_BASE}/api/requests/${id}/status`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status: 'processing' }),
+            });
+            setOrders(orders.map(o => o.id === id ? { ...o, status: '处理中' as const } : o));
+        } catch (err) {
+            console.error('Failed to process:', err);
+        }
+    };
+
+    const handleReject = async (id: string) => {
+        if (!confirm('确定要驳回该工单吗？')) return;
+        try {
+            await fetch(`${API_BASE}/api/requests/${id}/audit`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'reject', feedback: '买手驳回' }),
+            });
+            setOrders(orders.filter(o => o.id !== id));
+            alert('已驳回');
+        } catch (err) {
+            console.error('Failed to reject:', err);
+        }
+    };
+
+    const handleOpenInitialReview = (order: PricingOrder) => {
+        setReviewPrice(order.applied_price?.toString() || '');
+        setReviewModal({ show: true, order, type: 'initial' });
+    };
+
+    const handleOpenForceComplete = (order: PricingOrder) => {
+        setReviewPrice(order.initial_price?.toString() || '');
+        setReviewModal({ show: true, order, type: 'force' });
+    };
+
+    const handleSubmitInitialReview = async () => {
+        if (!reviewModal.order || !reviewPrice) return;
+        try {
+            const res = await fetch(`${API_BASE}/api/requests/${reviewModal.order.id}/initial-review`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ initialPrice: parseFloat(reviewPrice) }),
+            });
+            if (!res.ok) throw new Error('提交失败');
+            setOrders(orders.map(o => o.id === reviewModal.order!.id ? { ...o, status: '待确认' as const, initial_price: parseFloat(reviewPrice) } : o));
+            setReviewModal({ show: false, order: null, type: 'initial' });
+            alert('初核完成');
+        } catch (err) {
+            console.error('Initial review error:', err);
+            alert('初核失败');
+        }
+    };
+
+    const handleSubmitForceComplete = async () => {
+        if (!reviewModal.order || !reviewPrice) return;
+        try {
+            const res = await fetch(`${API_BASE}/api/requests/${reviewModal.order.id}/force-complete`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ finalPrice: parseFloat(reviewPrice) }),
+            });
+            if (!res.ok) throw new Error('提交失败');
+            setOrders(orders.map(o => o.id === reviewModal.order!.id ? { ...o, status: '已完成' as const, final_price: parseFloat(reviewPrice) } : o));
+            setReviewModal({ show: false, order: null, type: 'initial' });
+            alert('复核完成');
+        } catch (err) {
+            console.error('Force complete error:', err);
+            alert('复核失败');
+        }
+    };
+
+    const handleToggleUrgent = async (id: string, currentUrgent: boolean) => {
+        try {
+            await fetch(`${API_BASE}/api/requests/${id}/urgent`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ isUrgent: !currentUrgent }),
+            });
+            setOrders(orders.map(o => o.id === id ? { ...o, is_urgent: !currentUrgent } : o));
+        } catch (err) {
+            console.error('Toggle urgent error:', err);
+        }
+    };
+
+    // SKC display helper - show first 3, tooltip shows all
+    const renderSkcCodes = (codes: string[]) => {
+        if (codes.length === 0) return <span style={{ color: '#ccc', fontSize: 11 }}>无SKC</span>;
+
+        const displayCodes = codes.slice(0, 3);
+        const hasMore = codes.length > 3;
+
+        return (
+            <div
+                style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}
+                title={hasMore ? codes.join(', ') : undefined}
+            >
+                {displayCodes.map((code, idx) => (
+                    <span key={idx} style={{
+                        padding: '2px 6px',
+                        background: 'var(--bg-secondary)',
+                        borderRadius: 4,
+                        fontSize: 11,
+                        fontFamily: 'monospace',
+                        whiteSpace: 'nowrap'
+                    }}>
+                        {code}
+                    </span>
+                ))}
+                {hasMore && (
+                    <span style={{
+                        padding: '2px 6px',
+                        background: 'var(--primary)',
+                        color: '#fff',
+                        borderRadius: 4,
+                        fontSize: 10,
+                        cursor: 'pointer'
+                    }} title={codes.join(', ')}>
+                        +{codes.length - 3}
+                    </span>
+                )}
+            </div>
+        );
+    };
+
     return (
         <div className="order-page">
+            <input
+                type="file"
+                id="import-input"
+                accept=".xlsx"
+                style={{ display: 'none' }}
+                onChange={handleFileUpload}
+            />
             <div className="page-header">
                 <div>
                     <h1 className="page-title">核价工单</h1>
@@ -206,7 +440,7 @@ const PricingOrderPage: React.FC = () => {
                         <span className="material-symbols-outlined" style={{ fontSize: 16 }}>download</span>
                         一键导出未处理工单
                     </button>
-                    <button className="btn btn-success" onClick={handleImport}>
+                    <button className="btn btn-success" onClick={handleImportClick}>
                         <span className="material-symbols-outlined" style={{ fontSize: 16 }}>upload</span>
                         一键导入核价师结果
                     </button>
@@ -229,8 +463,9 @@ const PricingOrderPage: React.FC = () => {
                             <button className={`tab ${statusFilter === 'all' ? 'active' : ''}`} onClick={() => setStatusFilter('all')}>全部</button>
                             <button className={`tab ${statusFilter === '未处理' ? 'active' : ''}`} onClick={() => setStatusFilter('未处理')}>未处理</button>
                             <button className={`tab ${statusFilter === '处理中' ? 'active' : ''}`} onClick={() => setStatusFilter('处理中')}>处理中</button>
+                            <button className={`tab ${statusFilter === '待确认' ? 'active' : ''}`} onClick={() => setStatusFilter('待确认')}>待确认</button>
                             <button className={`tab ${statusFilter === '待复核' ? 'active' : ''}`} onClick={() => setStatusFilter('待复核')}>待复核</button>
-                            <button className={`tab ${statusFilter === '已处理' ? 'active' : ''}`} onClick={() => setStatusFilter('已处理')}>已处理</button>
+                            <button className={`tab ${statusFilter === '已完成' ? 'active' : ''}`} onClick={() => setStatusFilter('已完成')}>已完成</button>
                         </div>
                     </div>
                 </div>
@@ -239,6 +474,7 @@ const PricingOrderPage: React.FC = () => {
                     <thead>
                         <tr>
                             <th>店铺</th>
+                            <th style={{ width: 60 }}>处理人</th>
                             <th>工单类型</th>
                             <th>SKC编码</th>
                             <th>申请价格</th>
@@ -250,31 +486,55 @@ const PricingOrderPage: React.FC = () => {
                     <tbody>
                         {filteredOrders.map(order => (
                             <tr key={order.id}>
-                                <td style={{ fontWeight: 500 }}>{order.shop_name}</td>
-                                <td>
-                                    <span style={{
-                                        padding: '3px 8px',
-                                        borderRadius: 4,
-                                        fontSize: 11,
-                                        ...getSubTypeColor(order.sub_type)
-                                    }}>
-                                        {order.sub_type}
-                                    </span>
+                                <td style={{ fontWeight: 500 }}>
+                                    {order.shop_name}
+                                    {order.is_urgent && <span style={{
+                                        color: '#fff',
+                                        background: '#ef4444',
+                                        fontSize: 10,
+                                        padding: '1px 4px',
+                                        borderRadius: 2,
+                                        marginLeft: 6,
+                                        fontWeight: 'bold'
+                                    }}>加急</span>}
                                 </td>
                                 <td>
-                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                                        {order.skc_codes.map((code, idx) => (
-                                            <span key={idx} style={{
-                                                padding: '2px 6px',
-                                                background: 'var(--bg-secondary)',
-                                                borderRadius: 4,
-                                                fontSize: 11,
-                                                fontFamily: 'monospace'
-                                            }}>
-                                                {code}
-                                            </span>
-                                        ))}
+                                    {order.handler_name ? (
+                                        <div style={{
+                                            width: 32,
+                                            height: 32,
+                                            borderRadius: '50%',
+                                            background: getHandlerColor(order.handler_name),
+                                            color: '#fff',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            fontSize: 13,
+                                            fontWeight: 'bold',
+                                            boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+                                        }} title={order.handler_name}>
+                                            {getHandlerAlias(order.handler_name)}
+                                        </div>
+                                    ) : (
+                                        <span style={{ color: '#cbd5e1' }}>-</span>
+                                    )}
+                                </td>
+                                <td>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                        <span style={{
+                                            padding: '2px 6px',
+                                            borderRadius: 4,
+                                            fontSize: 11,
+                                            width: 'fit-content',
+                                            ...getSubTypeColor(order.sub_type)
+                                        }}>
+                                            {order.sub_type}
+                                        </span>
+                                        <span style={{ fontSize: 10, color: '#94a3b8' }}>{order.order_no || order.id.slice(0, 8)}</span>
                                     </div>
+                                </td>
+                                <td>
+                                    {renderSkcCodes(order.skc_codes)}
                                 </td>
                                 <td style={{ fontWeight: 600, color: 'var(--primary)' }}>¥{order.applied_price}</td>
                                 <td style={{ fontSize: 12, color: 'var(--text-muted)' }}>{order.submit_time}</td>
@@ -290,18 +550,39 @@ const PricingOrderPage: React.FC = () => {
                                                 处理
                                             </button>
                                         )}
-                                        {(order.status === '处理中' || order.status === '待复核') && (
-                                            <button className="btn btn-sm btn-success" onClick={() => handleInitialReview(order.id)}>
-                                                {order.status === '待复核' ? '复核' : '初核'}
+                                        {order.status === '处理中' && (
+                                            <button className="btn btn-sm btn-success" onClick={() => handleOpenInitialReview(order)}>
+                                                初核
                                             </button>
                                         )}
-                                        {order.status !== '已处理' && (
+                                        {order.status === '待复核' && (
+                                            <button className="btn btn-sm btn-warning" onClick={() => handleOpenForceComplete(order)}>
+                                                复核
+                                            </button>
+                                        )}
+                                        {order.status === '待确认' && (
+                                            <button className="btn btn-sm btn-primary" onClick={async () => {
+                                                const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+                                                await fetch(`${API_BASE}/api/requests/${order.id}/confirm`, { method: 'POST' });
+                                                await refreshOrders();
+                                            }}>
+                                                确认价格
+                                            </button>
+                                        )}
+                                        {order.status !== '已完成' && (
                                             <button className="btn btn-sm btn-danger" onClick={() => handleReject(order.id)}>
                                                 驳回
                                             </button>
                                         )}
                                         <button className="btn btn-sm btn-outline" onClick={() => setDetailModal({ show: true, order })}>
                                             详情
+                                        </button>
+                                        <button
+                                            className={`btn btn-sm ${order.is_urgent ? 'btn-danger' : 'btn-secondary'}`}
+                                            style={{ minWidth: 60 }}
+                                            onClick={() => handleToggleUrgent(order.id, !!order.is_urgent)}
+                                        >
+                                            {order.is_urgent ? '取消加急' : '加急'}
                                         </button>
                                     </div>
                                 </td>
@@ -335,16 +616,16 @@ const PricingOrderPage: React.FC = () => {
                                     <label>申请价格</label>
                                     <span style={{ color: 'var(--primary)', fontWeight: 600 }}>¥{detailModal.order.applied_price}</span>
                                 </div>
-                                {detailModal.order.audited_price && (
+                                {detailModal.order.initial_price && (
                                     <div className="detail-item">
-                                        <label>核价价格</label>
-                                        <span style={{ color: 'var(--success)', fontWeight: 600 }}>¥{detailModal.order.audited_price}</span>
+                                        <label>初核价格</label>
+                                        <span style={{ color: 'var(--success)', fontWeight: 600 }}>¥{detailModal.order.initial_price}</span>
                                     </div>
                                 )}
-                                {detailModal.order.review_price && (
+                                {detailModal.order.final_price && (
                                     <div className="detail-item">
-                                        <label>复核价格</label>
-                                        <span style={{ color: 'var(--warning)', fontWeight: 600 }}>¥{detailModal.order.review_price}</span>
+                                        <label>最终价格</label>
+                                        <span style={{ color: 'var(--warning)', fontWeight: 600 }}>¥{detailModal.order.final_price}</span>
                                     </div>
                                 )}
                             </div>
@@ -366,40 +647,63 @@ const PricingOrderPage: React.FC = () => {
                 </div>
             )}
 
-            {/* 复核弹窗 */}
+            {/* 初核/复核弹窗 */}
             {reviewModal.show && reviewModal.order && (
-                <div className="modal-overlay" onClick={() => setReviewModal({ show: false, order: null })}>
+                <div className="modal-overlay" onClick={() => setReviewModal({ show: false, order: null, type: 'initial' })}>
                     <div className="modal" style={{ maxWidth: 400 }} onClick={e => e.stopPropagation()}>
                         <div className="modal-header">
-                            <span className="modal-title">输入复核价格</span>
-                            <button className="btn-icon" onClick={() => setReviewModal({ show: false, order: null })}>
+                            <span className="modal-title">
+                                {reviewModal.type === 'initial' ? '初核定价' : '复核定价'}
+                            </span>
+                            <button className="btn-icon" onClick={() => setReviewModal({ show: false, order: null, type: 'initial' })}>
                                 <span className="material-symbols-outlined">close</span>
                             </button>
                         </div>
                         <div className="modal-body">
                             <div className="form-group">
-                                <label className="form-label">原核价价格</label>
+                                <label className="form-label">商家申请价格</label>
                                 <div style={{ fontSize: 18, fontWeight: 600, color: 'var(--text-muted)' }}>
-                                    ¥{reviewModal.order.audited_price}
+                                    ¥{reviewModal.order.applied_price}
                                 </div>
                             </div>
+                            {reviewModal.type === 'force' && reviewModal.order.initial_price && (
+                                <div className="form-group">
+                                    <label className="form-label">初核价格</label>
+                                    <div style={{ fontSize: 16, fontWeight: 500, color: 'var(--warning)' }}>
+                                        ¥{reviewModal.order.initial_price}
+                                    </div>
+                                </div>
+                            )}
+                            {reviewModal.type === 'force' && reviewModal.order.reason && (
+                                <div className="form-group">
+                                    <label className="form-label">商家拒绝原因</label>
+                                    <div style={{ fontSize: 13, color: 'var(--danger)', padding: '8px', background: 'var(--bg-secondary)', borderRadius: 4 }}>
+                                        {reviewModal.order.reason}
+                                    </div>
+                                </div>
+                            )}
                             <div className="form-group">
-                                <label className="form-label">复核价格</label>
+                                <label className="form-label">
+                                    {reviewModal.type === 'initial' ? '初核价格' : '最终价格'} <span style={{ color: 'red' }}>*</span>
+                                </label>
                                 <input
                                     type="number"
                                     className="form-input"
-                                    placeholder="输入复核后的价格"
+                                    placeholder={reviewModal.type === 'initial' ? '输入初核价格' : '输入最终价格'}
                                     value={reviewPrice}
                                     onChange={e => setReviewPrice(e.target.value)}
                                 />
                             </div>
                         </div>
                         <div className="modal-footer">
-                            <button className="btn btn-outline" onClick={() => setReviewModal({ show: false, order: null })}>
+                            <button className="btn btn-outline" onClick={() => setReviewModal({ show: false, order: null, type: 'initial' })}>
                                 取消
                             </button>
-                            <button className="btn btn-primary" onClick={handleSubmitReview}>
-                                确认复核
+                            <button
+                                className={`btn ${reviewModal.type === 'initial' ? 'btn-success' : 'btn-warning'}`}
+                                onClick={reviewModal.type === 'initial' ? handleSubmitInitialReview : handleSubmitForceComplete}
+                            >
+                                {reviewModal.type === 'initial' ? '确认初核' : '强制完成'}
                             </button>
                         </div>
                     </div>

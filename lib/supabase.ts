@@ -59,6 +59,7 @@ export interface RequestRecord {
   target_codes: string[];
   submit_time: string;
   status: 'processing' | 'completed' | 'rejected';
+  is_urgent?: boolean;
   pricing_details?: PricingDetail[];
   shop_name?: string;
   created_at: string;

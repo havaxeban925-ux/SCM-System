@@ -21,6 +21,7 @@ function toRequestRecord(r: DBRequestRecord): RequestRecord {
     }).replace(/\//g, '-'),
     status: r.status,
     pricingDetails: r.pricing_details as PricingDetail[] | undefined,
+    isUrgent: r.is_urgent
   };
 }
 
@@ -47,12 +48,22 @@ const RequestWorkbench: React.FC<Props> = ({ onNewRequest }) => {
   const [searchCode, setSearchCode] = useState('');
   const [searchStatus, setSearchStatus] = useState('');
 
+  // 确认/拒绝弹窗状态
+  const [confirmModal, setConfirmModal] = useState<{ show: boolean; record: RequestRecord | null; action: 'accept' | 'reject' }>({ show: false, record: null, action: 'accept' });
+  const [rejectReason, setRejectReason] = useState('');
+
   // 加载数据
   useEffect(() => {
     async function loadData() {
       setLoading(true);
       try {
-        const data = await getRequestRecords();
+        // 获取当前商家店铺名称
+        const userData = localStorage.getItem('merchantUser');
+        const user = userData ? JSON.parse(userData) : null;
+        // 优先取 shop_name，其次取 shops[0].shop_name，最后取 name (测试账号)
+        const shopName = user?.shop_name || user?.shops?.[0]?.shop_name || user?.name;
+
+        const data = await getRequestRecords(shopName);
         setRecords(data.map(toRequestRecord));
       } catch (err) {
         console.error('Error loading request records:', err);
@@ -72,7 +83,15 @@ const RequestWorkbench: React.FC<Props> = ({ onNewRequest }) => {
       if (searchSubType && !r.subType.includes(searchSubType)) return false;
       if (searchCode && !r.targetCodes.some(c => c.includes(searchCode))) return false;
       if (searchStatus) {
-        const statusMap: Record<string, string> = { processing: '处理中', completed: '已完成', rejected: '已驳回', viewed: '已查看' };
+        // 支持新状态筛选
+        const statusMap: Record<string, string> = {
+          processing: '处理中',
+          pending_confirm: '待确认',
+          pending_recheck: '待复核',
+          completed: '已完成',
+          rejected: '已驳回',
+          viewed: '已查看'
+        };
         if (statusMap[r.status] !== searchStatus) return false;
       }
       return true;
@@ -118,6 +137,8 @@ const RequestWorkbench: React.FC<Props> = ({ onNewRequest }) => {
   const StatusBadge = ({ status }: { status: string }) => {
     const colors: Record<string, string> = {
       processing: 'bg-amber-50 text-amber-600 border-amber-200',
+      pending_confirm: 'bg-blue-50 text-blue-600 border-blue-200',  // 待确认
+      pending_recheck: 'bg-orange-50 text-orange-600 border-orange-200',  // 待复核
       completed: 'bg-emerald-50 text-emerald-600 border-emerald-200',
       rejected: 'bg-red-50 text-red-600 border-red-200',
       applying: 'bg-blue-50 text-blue-600 border-blue-200',
@@ -125,6 +146,8 @@ const RequestWorkbench: React.FC<Props> = ({ onNewRequest }) => {
     };
     const labels: Record<string, string> = {
       processing: '处理中',
+      pending_confirm: '待确认',  // 买手初核完成，等待商家确认
+      pending_recheck: '待复核',  // 商家拒绝，等待买手复核
       completed: '已完成',
       rejected: '已驳回',
       applying: '申请中',
@@ -137,6 +160,42 @@ const RequestWorkbench: React.FC<Props> = ({ onNewRequest }) => {
     );
   };
 
+  // 商家确认/拒绝初核价格
+  const handleMerchantConfirm = async () => {
+    if (!confirmModal.record) return;
+
+    const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+
+    try {
+      const res = await fetch(`${API_BASE}/api/requests/${confirmModal.record.id}/merchant-confirm`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: confirmModal.action,
+          rejectReason: confirmModal.action === 'reject' ? rejectReason : undefined
+        })
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        alert(`操作失败: ${err.error}`);
+        return;
+      }
+
+      // 更新本地状态
+      const newStatus = confirmModal.action === 'accept' ? 'completed' : 'pending_recheck';
+      setRecords(prev => prev.map(r =>
+        r.id === confirmModal.record!.id ? { ...r, status: newStatus } : r
+      ));
+
+      setConfirmModal({ show: false, record: null, action: 'accept' });
+      setRejectReason('');
+      alert(confirmModal.action === 'accept' ? '已接受核价结果' : '已拒绝，等待买手复核');
+    } catch (err: any) {
+      alert(`请求失败: ${err.message}`);
+    }
+  };
+
   // 获取关联代码 Label
   const getCodeLabel = (record: RequestRecord) => {
     if (record.type === 'pricing') return 'SKC';
@@ -144,22 +203,34 @@ const RequestWorkbench: React.FC<Props> = ({ onNewRequest }) => {
   };
 
   const CodeTags = ({ codes, label }: { codes: string[]; label: string }) => {
-    const displayCount = 2;
+    const displayCount = 3;
+    const hasMore = codes.length > displayCount;
     return (
-      <div className="relative group cursor-help">
-        <div className="flex flex-col gap-0.5">
-          <span className="text-[9px] text-slate-400">{label}</span>
-          <div className="flex gap-1">
+      <div className="relative group cursor-pointer max-w-[240px]">
+        <div className="flex flex-col gap-1">
+          <span className="text-[10px] text-slate-400 font-bold">{label}</span>
+          <div className="flex flex-wrap gap-1.5">
             {codes.slice(0, displayCount).map(c => (
-              <span key={c} className="bg-slate-100 text-[10px] px-1.5 py-0.5 rounded font-mono border border-slate-200">{c}</span>
+              <span key={c} className="bg-slate-100 text-[11px] px-1.5 py-0.5 rounded font-mono border border-slate-200 shadow-sm">{c}</span>
             ))}
-            {codes.length > displayCount && <span className="text-[10px] text-slate-400">+{codes.length - displayCount}</span>}
+            {hasMore && (
+              <span className="bg-blue-50 text-blue-600 text-[10px] px-1.5 py-0.5 rounded font-bold border border-blue-100 hover:bg-blue-100 transition-colors">
+                +{codes.length - displayCount}
+              </span>
+            )}
           </div>
         </div>
-        {codes.length > displayCount && (
-          <div className="absolute left-0 top-full mt-2 hidden group-hover:block z-50 bg-white border border-slate-200 p-2 rounded shadow-xl min-w-[120px]">
-            <div className="flex flex-col gap-1">
-              {codes.map(c => <span key={c} className="text-[10px] font-mono text-slate-600">{c}</span>)}
+        {hasMore && (
+          <div className="absolute left-0 top-full mt-1 hidden group-hover:block z-50 bg-white border border-slate-200 p-3 rounded-xl shadow-xl min-w-[200px] max-w-[300px] max-h-[240px] overflow-y-auto animate-in fade-in zoom-in duration-200">
+            <div className="text-[10px] font-bold text-slate-400 mb-2 pb-2 border-b border-slate-100 sticky top-0 bg-white">
+              全部关联代码 ({codes.length})
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {codes.map(c => (
+                <span key={c} className="bg-slate-50 border border-slate-100 text-[11px] font-mono text-slate-600 px-1.5 py-0.5 rounded hover:bg-slate-100 transition-colors">
+                  {c}
+                </span>
+              ))}
             </div>
           </div>
         )}
@@ -300,7 +371,10 @@ const RequestWorkbench: React.FC<Props> = ({ onNewRequest }) => {
             <tbody className="divide-y divide-slate-100">
               {filteredRecords.map(record => (
                 <tr key={record.id} className="hover:bg-slate-50 transition-colors">
-                  <td className="px-6 py-4 font-mono text-navy-700 font-bold">{record.id.slice(0, 12)}</td>
+                  <td className="px-6 py-4 font-mono text-navy-700 font-bold">
+                    {record.id.slice(0, 12)}
+                    {record.isUrgent && <span className="ml-2 text-white bg-red-500 px-1 py-0.5 rounded text-[10px]">加急</span>}
+                  </td>
                   <td className="px-6 py-4">
                     <span className={`px-2 py-1 rounded text-[10px] font-bold ${record.type === 'pricing' ? 'text-blue-700 bg-blue-50' : 'text-purple-700 bg-purple-50'}`}>
                       {record.type === 'pricing' ? '核价类' : '异常类'}
@@ -311,9 +385,28 @@ const RequestWorkbench: React.FC<Props> = ({ onNewRequest }) => {
                   <td className="px-6 py-4 text-slate-500 text-xs">{record.submitTime}</td>
                   <td className="px-6 py-4"><StatusBadge status={record.status} /></td>
                   <td className="px-6 py-4 text-right">
-                    {record.type === 'pricing' && (
-                      <button onClick={() => setSelectedRequest(record)} className="text-accent hover:underline font-bold text-xs">查看详情</button>
-                    )}
+                    <div className="flex gap-2 justify-end">
+                      {record.type === 'pricing' && (
+                        <button onClick={() => setSelectedRequest(record)} className="text-accent hover:underline font-bold text-xs">查看详情</button>
+                      )}
+                      {/* 待确认状态：显示确认/拒绝按钮 */}
+                      {record.status === 'pending_confirm' && (
+                        <>
+                          <button
+                            onClick={() => setConfirmModal({ show: true, record, action: 'accept' })}
+                            className="bg-emerald-500 text-white px-2 py-1 rounded text-xs font-bold hover:bg-emerald-600"
+                          >
+                            接受
+                          </button>
+                          <button
+                            onClick={() => setConfirmModal({ show: true, record, action: 'reject' })}
+                            className="bg-red-500 text-white px-2 py-1 rounded text-xs font-bold hover:bg-red-600"
+                          >
+                            拒绝
+                          </button>
+                        </>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -499,6 +592,29 @@ const RequestWorkbench: React.FC<Props> = ({ onNewRequest }) => {
                 </div>
               )}
 
+              {/* 价格信息 */}
+              <div className="bg-slate-50 p-4 rounded-lg mt-4">
+                <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-3 border-l-4 border-purple-500 pl-3">价格详情</h4>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="detail-item">
+                    <label className="text-xs text-slate-500">申请价格</label>
+                    <p className="font-bold text-navy-700 mt-1">¥{selectedRequest.pricingDetails[0]?.appliedPrice}</p>
+                  </div>
+                  {selectedRequest.initial_price && (
+                    <div className="detail-item">
+                      <label className="text-xs text-slate-500">初核价格</label>
+                      <p className="font-bold text-emerald-600 mt-1">¥{selectedRequest.initial_price}</p>
+                    </div>
+                  )}
+                  {selectedRequest.final_price && (
+                    <div className="detail-item">
+                      <label className="text-xs text-slate-500">最终价格</label>
+                      <p className="font-bold text-red-600 mt-1">¥{selectedRequest.final_price}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
               {/* 备注信息 */}
               {selectedRequest.pricingDetails && selectedRequest.pricingDetails[0]?.remark && (
                 <div>
@@ -547,9 +663,62 @@ const RequestWorkbench: React.FC<Props> = ({ onNewRequest }) => {
               )}
             </div>
           </div>
-        </div>
+        </div >
       )}
-    </div>
+
+      {/* 确认/拒绝核价弹窗 */}
+      {
+        confirmModal.show && confirmModal.record && (
+          <div className="fixed inset-0 z-[130] flex items-center justify-center p-6">
+            <div className="absolute inset-0 bg-navy-900/60 backdrop-blur-sm" onClick={() => setConfirmModal({ show: false, record: null, action: 'accept' })}></div>
+            <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md flex flex-col overflow-hidden animate-in zoom-in-95">
+              <div className="px-6 py-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
+                <h3 className="font-bold text-lg text-navy-700">
+                  {confirmModal.action === 'accept' ? '确认接受核价结果' : '拒绝核价结果'}
+                </h3>
+                <button onClick={() => setConfirmModal({ show: false, record: null, action: 'accept' })} className="material-symbols-outlined text-slate-400">close</button>
+              </div>
+
+              <div className="p-6 space-y-4">
+                <div className="bg-slate-50 p-4 rounded-lg">
+                  <p className="text-sm text-slate-600">工单编号: <span className="font-mono font-bold">{confirmModal.record.id.slice(0, 12)}</span></p>
+                </div>
+
+                {confirmModal.action === 'accept' ? (
+                  <p className="text-sm text-slate-600">确认接受此核价结果？接受后工单将标记为已完成。</p>
+                ) : (
+                  <div className="space-y-3">
+                    <p className="text-sm text-slate-600">请填写拒绝原因，买手将进行复核：</p>
+                    <textarea
+                      className="w-full border border-slate-200 rounded-lg p-3 text-sm"
+                      rows={3}
+                      placeholder="请详细说明拒绝原因..."
+                      value={rejectReason}
+                      onChange={e => setRejectReason(e.target.value)}
+                    />
+                  </div>
+                )}
+              </div>
+
+              <div className="px-6 py-4 border-t border-slate-200 bg-slate-50 flex justify-end gap-3">
+                <button
+                  onClick={() => setConfirmModal({ show: false, record: null, action: 'accept' })}
+                  className="px-4 py-2 border border-slate-300 rounded-lg text-sm font-bold text-slate-600"
+                >
+                  取消
+                </button>
+                <button
+                  onClick={handleMerchantConfirm}
+                  className={`px-5 py-2 rounded-lg text-sm font-bold text-white ${confirmModal.action === 'accept' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-red-600 hover:bg-red-700'}`}
+                >
+                  {confirmModal.action === 'accept' ? '确认接受' : '确认拒绝'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      }
+    </div >
   );
 };
 

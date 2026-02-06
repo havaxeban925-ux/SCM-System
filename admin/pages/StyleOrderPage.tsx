@@ -1,15 +1,18 @@
 import React, { useState, useEffect } from 'react';
+import { getHandlerAlias, getHandlerColor } from '../utils/handlerMapping';
 
 interface StyleOrder {
     id: string;
     shop_name: string;
     style_name: string;
     image_url: string;
-    sub_type: '改图帮看' | '打版帮看' | '上传SPU';
+    sub_type: '改图帮看' | '打版帮看' | '上传SPU' | '商家要款'; // 问题8：新增商家要款
     submit_time: string;
     status: '待处理' | '已处理' | '已驳回';
     content?: string;
     spu_list?: string;
+    source?: 'style_demand' | 'request'; // 来源
+    handler_name?: string;
 }
 
 const StyleOrderPage: React.FC = () => {
@@ -19,7 +22,8 @@ const StyleOrderPage: React.FC = () => {
         const fetchOrders = async () => {
             try {
                 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
-                // 使用 /api/admin/styles 获取款式数据，这里假设款式工单就是 b_style_demand
+
+                // 获取款式需求数据
                 const res = await fetch(`${API_BASE}/api/admin/styles?pageSize=100`);
                 if (!res.ok) throw new Error('Failed to fetch style orders');
                 const data = await res.json();
@@ -29,15 +33,36 @@ const StyleOrderPage: React.FC = () => {
                     shop_name: item.shop_name || '未知店铺',
                     style_name: item.name || '未命名款式',
                     image_url: item.image_url || 'https://via.placeholder.com/100',
-                    // 如果 DB 没有 subtype，暂且根据 push_type 或者默认值
-                    sub_type: item.push_type === 'POOL' ? '上传SPU' : '改图帮看',
+                    sub_type: item.sub_type || (item.push_type === 'POOL' ? '上传SPU' : '商家要款'),
                     submit_time: item.created_at ? new Date(item.created_at).toLocaleString() : '',
-                    // status 映射: new -> 待处理, developing -> 已处理
                     status: item.status === 'new' || item.status === 'locked' ? '待处理' :
                         item.status === 'abandoned' ? '已驳回' : '已处理',
                     content: item.remark,
-                    spu_list: item.back_spu
+                    spu_list: item.back_spu,
+                    source: 'style_demand' as const,
+                    handler_name: item.handler_name
                 }));
+
+                // 问题8：同时获取requests表中的款式类申请（商家要款）
+                const reqRes = await fetch(`${API_BASE}/api/requests?type=style`);
+                if (reqRes.ok) {
+                    const reqData = await reqRes.json();
+                    const styleRequests: StyleOrder[] = (reqData.data || []).map((item: any) => ({
+                        id: item.id,
+                        shop_name: item.shop_name || '未知店铺',
+                        style_name: item.order_no || '商家要款',
+                        image_url: item.image_urls?.[0] || 'https://via.placeholder.com/100',
+                        sub_type: (item.sub_type || '商家要款') as StyleOrder['sub_type'],
+                        submit_time: item.submit_time ? new Date(item.submit_time).toLocaleString() : '',
+                        status: item.status === 'processing' ? '待处理' :
+                            item.status === 'rejected' ? '已驳回' : '已处理',
+                        content: item.pricing_details?.[0]?.remark,
+                        source: 'request' as const,
+                        handler_name: item.handler_name
+                    }));
+                    mappedOrders.push(...styleRequests);
+                }
+
                 setOrders(mappedOrders);
             } catch (error) {
                 console.error('Error fetching style orders:', error);
@@ -48,13 +73,45 @@ const StyleOrderPage: React.FC = () => {
     }, []);
 
     const [detailModal, setDetailModal] = useState<{ show: boolean; order: StyleOrder | null }>({ show: false, order: null });
-    const [filter, setFilter] = useState<'all' | '改图帮看' | '打版帮看' | '上传SPU'>('all');
+    const [filter, setFilter] = useState<'all' | '改图帮看' | '打版帮看' | '上传SPU' | '商家要款'>('all'); // 问题8
+    const [buyerRemark, setBuyerRemark] = useState(''); // 新需求2：买手备注
+
+    // 新需求2：提交买手备注
+    const handleSubmitRemark = async () => {
+        if (!detailModal.order) return;
+        try {
+            const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+            const res = await fetch(`${API_BASE}/api/requests/${detailModal.order.id}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ buyer_remark: buyerRemark })
+            });
+            if (!res.ok) throw new Error('提交失败');
+            alert('备注已提交');
+            setDetailModal({ show: false, order: null });
+            setBuyerRemark('');
+        } catch (err) {
+            alert('提交失败，请重试');
+        }
+    };
 
     const filteredOrders = orders.filter(o => filter === 'all' || o.sub_type === filter);
 
-    const handleProcess = (id: string) => {
-        setOrders(orders.map(o => o.id === id ? { ...o, status: '已处理' as const } : o));
-        alert('已处理');
+    // 问题12修复：处理工单时调用API更新状态
+    const handleProcess = async (id: string) => {
+        try {
+            const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+            const res = await fetch(`${API_BASE}/api/admin/styles/${id}/confirm`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+            if (!res.ok) throw new Error('确认失败');
+            setOrders(orders.map(o => o.id === id ? { ...o, status: '已处理' as const } : o));
+            alert('已确认，SPU已归入库');
+        } catch (err: any) {
+            console.error('Confirm error:', err);
+            alert('处理失败，请重试');
+        }
     };
 
     const handleReject = (id: string) => {
@@ -68,6 +125,7 @@ const StyleOrderPage: React.FC = () => {
             case '改图帮看': return { bg: '#fef3c7', color: '#92400e' };
             case '打版帮看': return { bg: '#dbeafe', color: '#1e40af' };
             case '上传SPU': return { bg: '#d1fae5', color: '#065f46' };
+            case '商家要款': return { bg: '#fce7f3', color: '#9d174d' }; // 问题8：新增
             default: return { bg: '#f3f4f6', color: '#374151' };
         }
     };
@@ -96,6 +154,10 @@ const StyleOrderPage: React.FC = () => {
                         <button className={`tab ${filter === '上传SPU' ? 'active' : ''}`} onClick={() => setFilter('上传SPU')}>
                             上传SPU
                         </button>
+                        {/* 问题8：新增商家要款 Tab */}
+                        <button className={`tab ${filter === '商家要款' ? 'active' : ''}`} onClick={() => setFilter('商家要款')}>
+                            商家要款 ({orders.filter(o => o.sub_type === '商家要款').length})
+                        </button>
                     </div>
                 </div>
 
@@ -107,6 +169,7 @@ const StyleOrderPage: React.FC = () => {
                             <th>店铺</th>
                             <th>工单类型</th>
                             <th>提交时间</th>
+                            <th>Handler</th>
                             <th>状态</th>
                             <th>操作</th>
                         </tr>
@@ -131,13 +194,40 @@ const StyleOrderPage: React.FC = () => {
                                 </td>
                                 <td style={{ fontSize: 12, color: 'var(--text-muted)' }}>{order.submit_time}</td>
                                 <td>
+                                    {order.handler_name && (
+                                        <div style={{
+                                            ...getHandlerColor(order.handler_name),
+                                            width: 24,
+                                            height: 24,
+                                            borderRadius: '50%',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            fontSize: 11,
+                                            fontWeight: 600
+                                        }} title={order.handler_name}>
+                                            {getHandlerAlias(order.handler_name)}
+                                        </div>
+                                    )}
+                                </td>
+                                <td>
                                     <span className={`status-badge ${order.status === '已处理' ? 'completed' : order.status === '已驳回' ? 'rejected' : 'processing'}`}>
-                                        {order.status}
+                                        {/* 新需求1：根据sub_type显示状态 */}
+                                        {order.status === '待处理' && order.sub_type === '改图帮看' ? '改图帮看中' :
+                                            order.status === '待处理' && order.sub_type === '打版帮看' ? '打版帮看中' :
+                                                order.status === '待处理' && order.spu_list ? '待确认SPU' :
+                                                    order.status}
                                     </span>
                                 </td>
                                 <td>
                                     <div className="action-buttons">
-                                        {order.status === '待处理' && (
+                                        {/* 新需求3：SPU确认按钮 */}
+                                        {order.status === '待处理' && order.spu_list && (
+                                            <button className="btn btn-sm btn-success" onClick={() => handleProcess(order.id)}>
+                                                确认
+                                            </button>
+                                        )}
+                                        {order.status === '待处理' && !order.spu_list && (
                                             <>
                                                 <button className="btn btn-sm btn-primary" onClick={() => handleProcess(order.id)}>
                                                     处理
@@ -195,8 +285,30 @@ const StyleOrderPage: React.FC = () => {
                                     </div>
                                 </div>
                             )}
+
+                            {/* 新需求2：买手备注输入 */}
+                            <div className="detail-section">
+                                <h4>买手备注</h4>
+                                <textarea
+                                    value={buyerRemark}
+                                    onChange={(e) => setBuyerRemark(e.target.value)}
+                                    placeholder="请输入买手备注..."
+                                    style={{
+                                        width: '100%',
+                                        minHeight: '80px',
+                                        padding: '8px',
+                                        border: '1px solid var(--border-color)',
+                                        borderRadius: '6px',
+                                        fontSize: '14px',
+                                        resize: 'vertical'
+                                    }}
+                                />
+                            </div>
                         </div>
                         <div className="modal-footer">
+                            <button className="btn btn-primary" onClick={handleSubmitRemark}>
+                                提交备注
+                            </button>
                             <button className="btn btn-outline" onClick={() => setDetailModal({ show: false, order: null })}>
                                 关闭
                             </button>

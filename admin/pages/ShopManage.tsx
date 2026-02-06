@@ -85,6 +85,7 @@ const ShopManage: React.FC = () => {
         username: '',
         shop_name: '',
         keyId: '',
+        keyName: '',  // KEY 商号名称
         shopCode: '',
         level: 'N' as Shop['level']
     });
@@ -120,15 +121,19 @@ const ShopManage: React.FC = () => {
 
             // Group by KEY - 处理空 key_id 的情况
             // 如果 key_id 为空，则使用 shop_name 作为临时分组键
+            // 问题1修复：分组时提取phone字段
             const grouped = allFetched.reduce((acc, shop) => {
                 const keyId = (shop.key_id && shop.key_id.trim()) ? shop.key_id.trim() : shop.shop_name || '未分类';
                 if (!acc[keyId]) {
                     acc[keyId] = {
                         key_id: keyId,
-                        phone: '',
+                        phone: shop.phone || '', // 问题1：从第一个店铺提取电话
                         shops: [],
                         level: shop.level || 'N',
                     };
+                } else if (!acc[keyId].phone && shop.phone) {
+                    // 如果当前分组没有电话但此店铺有，则使用此店铺的电话
+                    acc[keyId].phone = shop.phone;
                 }
                 acc[keyId].shops.push(shop);
                 return acc;
@@ -214,6 +219,7 @@ const ShopManage: React.FC = () => {
             username: reg.username,
             shop_name: reg.shop_name,
             keyId: '',
+            keyName: '',  // 初始化 KEY 名称
             shopCode: '',
             level: 'N'
         });
@@ -234,6 +240,7 @@ const ShopManage: React.FC = () => {
                 body: JSON.stringify({
                     userId: approveForm.userId,
                     keyId: approveForm.keyId,
+                    keyName: approveForm.keyName,  // 传递 KEY 名称
                     shopCode: approveForm.shopCode,
                     level: approveForm.level
                 })
@@ -970,6 +977,16 @@ const ShopManage: React.FC = () => {
                                         placeholder="例如 KEY-001"
                                         value={approveForm.keyId}
                                         onChange={e => setApproveForm({ ...approveForm, keyId: e.target.value })}
+                                    />
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">KEY 名称 (商号) <span style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 'normal' }}>(选填)</span></label>
+                                    <input
+                                        type="text"
+                                        className="form-input"
+                                        placeholder="例如 张三服饰"
+                                        value={approveForm.keyName}
+                                        onChange={e => setApproveForm({ ...approveForm, keyName: e.target.value })}
                                     />
                                 </div>
                                 <div className="form-group">

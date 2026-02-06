@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { supabase } from '../lib/supabase';
+import { notifyShop } from './notifications';
 
 const router = Router();
 
@@ -96,11 +97,25 @@ router.post('/:id/review', async (req, res) => {
         .from('b_restock_order')
         .update({
             status: newStatus,
+            handler_name: decodeURIComponent(req.get('X-Buyer-Name') || ''),
             updated_at: new Date().toISOString()
         })
         .eq('id', id);
 
     if (error) return res.status(500).json({ error: error.message });
+
+    // ✅ Phase 2: SSE 通知
+    // 需要查询订单绑定的店铺名称
+    const { data: order } = await supabase.from('b_restock_order').select('shop_id').eq('id', id).single();
+    if (order?.shop_id) {
+        notifyShop(order.shop_id, {
+            type: 'restock_update',
+            title: agree ? '砍量已通过' : '砍量已拒绝',
+            message: agree ? '您的补货订单砍量已通过，开始生产' : '您的补货订单砍量已被拒绝',
+            data: { id, status: newStatus }
+        });
+    }
+
     res.json({ success: true });
 });
 
@@ -194,6 +209,39 @@ router.post('/:id/arrival', async (req, res) => {
     res.json({ success: true });
 });
 
+// POST /api/restock/batch - 批量创建补货订单
+router.post('/batch', async (req, res) => {
+    const { orders } = req.body;
+
+    if (!Array.isArray(orders) || orders.length === 0) {
+        return res.status(400).json({ error: 'Ordes array is required' });
+    }
+
+    try {
+        const insertData = orders.map((o: any) => ({
+            shop_id: o.shopId,
+            skc_code: o.skcCode,
+            name: o.name,
+            plan_quantity: o.planQuantity,
+            actual_quantity: o.planQuantity, // Default to plan quantity
+            status: 'pending',
+            remark: o.remark,
+            is_urgent: false
+        }));
+
+        const { error } = await supabase
+            .from('b_restock_order')
+            .insert(insertData);
+
+        if (error) throw error;
+
+        res.json({ success: true, count: insertData.length });
+    } catch (error: any) {
+        console.error('Batch create error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // GET /api/restock/:id/logistics - 获取物流明细
 router.get('/:id/logistics', async (req, res) => {
     const { id } = req.params;
@@ -235,7 +283,24 @@ router.post('/:id/cancel-confirm', async (req, res) => {
         .from('b_restock_order')
         .update({
             status: 'cancelled',
-            remark: `由${buyerName}确认取消`,
+            handler_name: decodeURIComponent(req.get('X-Buyer-Name') || ''),
+            updated_at: new Date().toISOString()
+        })
+        .eq('id', id);
+
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ success: true });
+});
+
+// POST /api/restock/:id/urgent - 切换加急状态
+router.post('/:id/urgent', async (req, res) => {
+    const { id } = req.params;
+    const { is_urgent } = req.body;
+
+    const { error } = await supabase
+        .from('b_restock_order')
+        .update({
+            is_urgent: is_urgent,
             updated_at: new Date().toISOString()
         })
         .eq('id', id);
