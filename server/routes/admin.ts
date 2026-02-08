@@ -44,47 +44,70 @@ router.get('/dashboard', async (req, res) => {
         );
         const keyTotal = uniqueKeys.size;
 
-        // 4. 各类工单统计 & 5. SPU总数 (Parallel Execution)
-        const [
-            { count: styleTotal, error: styleError },
-            { count: stylePending, error: stylePendingError },
-            { count: pricingTotal, error: pricingTotalError },
-            { count: pricingPending, error: pricingPendingError },
-            { count: anomalyTotal, error: anomalyTotalError },
-            { count: anomalyPending, error: anomalyPendingError },
-            { count: restockTotal, error: restockTotalError },
-            { count: restockPending, error: restockPendingError },
-            { count: spuTotal, error: spuError }
-        ] = await Promise.all([
-            // styleTotal
-            supabase.from('b_style_demand').select('*', { count: 'exact', head: true }),
-            // stylePending
-            supabase.from('b_style_demand').select('*', { count: 'exact', head: true }).in('status', ['new', 'developing', 'helping']),
-            // pricingTotal
-            supabase.from('b_request_record').select('*', { count: 'exact', head: true }).eq('type', 'pricing'),
-            // pricingPending
-            supabase.from('b_request_record').select('*', { count: 'exact', head: true }).eq('type', 'pricing').eq('status', 'processing'),
-            // anomalyTotal
-            supabase.from('b_request_record').select('*', { count: 'exact', head: true }).eq('type', 'anomaly'),
-            // anomalyPending
-            supabase.from('b_request_record').select('*', { count: 'exact', head: true }).eq('type', 'anomaly').eq('status', 'processing'),
-            // restockTotal
-            supabase.from('b_restock_order').select('*', { count: 'exact', head: true }),
-            // restockPending
-            supabase.from('b_restock_order').select('*', { count: 'exact', head: true }).in('status', ['pending', 'processing']),
-            // spuTotal
-            supabase.from('b_style_demand').select('*', { count: 'exact', head: true }).not('back_spu', 'is', null).neq('back_spu', '')
-        ]);
-
+        // 4. 各类工单统计
+        // 款式工单 (b_style_demand)
+        const { count: styleTotal, error: styleError } = await supabase
+            .from('b_style_demand')
+            .select('*', { count: 'exact', head: true });
         if (styleError) throw styleError;
+
+        const { count: stylePending, error: stylePendingError } = await supabase
+            .from('b_style_demand')
+            .select('*', { count: 'exact', head: true })
+            .in('status', ['new', 'developing', 'helping']);
         if (stylePendingError) throw stylePendingError;
+
+        // 核价工单
+        const { count: pricingTotal, error: pricingTotalError } = await supabase
+            .from('b_request_record')
+            .select('*', { count: 'exact', head: true })
+            .eq('type', 'pricing');
         if (pricingTotalError) throw pricingTotalError;
+
+        const { count: pricingPending, error: pricingPendingError } = await supabase
+            .from('b_request_record')
+            .select('*', { count: 'exact', head: true })
+            .eq('type', 'pricing')
+            .eq('status', 'processing');
         if (pricingPendingError) throw pricingPendingError;
+
+        // 异常工单
+        const { count: anomalyTotal, error: anomalyTotalError } = await supabase
+            .from('b_request_record')
+            .select('*', { count: 'exact', head: true })
+            .eq('type', 'anomaly');
         if (anomalyTotalError) throw anomalyTotalError;
+
+        const { count: anomalyPending, error: anomalyPendingError } = await supabase
+            .from('b_request_record')
+            .select('*', { count: 'exact', head: true })
+            .eq('type', 'anomaly')
+            .eq('status', 'processing');
         if (anomalyPendingError) throw anomalyPendingError;
+
+        // 大货工单 (b_restock_order)
+        const { count: restockTotal, error: restockTotalError } = await supabase
+            .from('b_restock_order')
+            .select('*', { count: 'exact', head: true });
         if (restockTotalError) throw restockTotalError;
+
+        const { count: restockPending, error: restockPendingError } = await supabase
+            .from('b_restock_order')
+            .select('*', { count: 'exact', head: true })
+            .in('status', ['pending', 'processing']);
         if (restockPendingError) throw restockPendingError;
+
+        // 5. SPU总数 (从 sys_spu 表统计，按实际SPU数量计算)
+        const { data: spuData, error: spuError } = await supabase
+            .from('sys_spu')
+            .select('spu_code');
         if (spuError) throw spuError;
+
+        // 计算实际的SPU数量（spu_code可能包含多个SPU，用空格分隔）
+        const spuTotal = (spuData || []).reduce((total, item) => {
+            const spuList = (item.spu_code || '').split(/\s+/).filter(Boolean);
+            return total + spuList.length;
+        }, 0);
 
         // 6. 用户总数 (暂时返回固定4人，因为是硬编码的)
         const userTotal = 4;
@@ -137,83 +160,6 @@ router.get('/shops', async (req, res) => {
     const { data, error, count } = await query;
     if (error) return res.status(500).json({ error: error.message });
     res.json({ data: data || [], total: count || 0, page, pageSize });
-});
-
-// GET /api/admin/restock - 获取补货订单列表（带店铺名称）
-router.get('/restock', async (req, res) => {
-    const page = parseInt(req.query.page as string) || 1;
-    const pageSize = parseInt(req.query.pageSize as string) || 50;
-    const offset = (page - 1) * pageSize;
-
-    // Always fetch orders first
-    const { data: orders, error, count } = await supabase
-        .from('b_restock_order')
-        .select('*', { count: 'exact' })
-        .order('created_at', { ascending: false })
-        .range(offset, offset + pageSize - 1);
-
-    if (error) return res.status(500).json({ error: error.message });
-
-    // Fetch all unique shop IDs from orders
-    const shopIds = [...new Set((orders || []).map(o => o.shop_id).filter(Boolean))];
-    console.log('[Admin Restock] Shop IDs to lookup:', shopIds);
-
-    // Fetch shop names
-    let shopMap: Record<string, string> = {};
-    if (shopIds.length > 0) {
-        const { data: shops, error: shopError } = await supabase
-            .from('sys_shop')
-            .select('id, shop_name')
-            .in('id', shopIds);
-
-        if (shopError) {
-            console.warn('[Admin Restock] Failed to fetch shops:', shopError.message);
-        } else {
-            shopMap = (shops || []).reduce((acc, s) => {
-                acc[s.id] = s.shop_name;
-                return acc;
-            }, {} as Record<string, string>);
-            console.log('[Admin Restock] Shop map:', shopMap);
-        }
-    }
-
-    // Map shop names to orders
-    const joined = (orders || []).map(o => ({
-        ...o,
-        shop_name: shopMap[o.shop_id] || 'Unknown Shop'
-    }));
-
-    console.log('[Admin Restock] First 3 orders:', joined.slice(0, 3).map(o => ({ id: o.id, shop_id: o.shop_id, shop_name: o.shop_name })));
-
-    res.json({ data: joined, total: count || 0, page, pageSize });
-});
-
-// POST /api/admin/restock - 创建补货订单（管理后台）
-router.post('/restock', async (req, res) => {
-    const { shopId, skcCode, name, planQuantity, remark } = req.body;
-
-    if (!shopId) {
-        return res.status(400).json({ error: 'Shop ID is required' });
-    }
-
-    const restockOrder = {
-        shop_id: shopId,
-        skc_code: skcCode || null,
-        name: name || null,
-        plan_quantity: planQuantity || 0,
-        status: 'pending',
-        remark: remark || '',
-        created_at: new Date().toISOString()
-    };
-
-    const { data, error } = await supabase
-        .from('b_restock_order')
-        .insert(restockOrder)
-        .select()
-        .single();
-
-    if (error) return res.status(500).json({ error: error.message });
-    res.json(data);
 });
 
 // POST /api/admin/shops - 创建商铺
@@ -398,56 +344,44 @@ router.post('/push/private', async (req, res) => {
     // 1. 批量推送不同款式: { styles: [{ shopId, name, imageUrl, ... }] }
     // 2. 单款推送多店: { shopIds: [], name, imageUrl, ... }
 
-    // Helper to get shop info
-    const getShopInfo = async (shopId: string) => {
-        const { data } = await supabase.from('sys_shop').select('shop_name, key_id').eq('id', shopId).single();
-        return data || { shop_name: 'Unknown', key_id: null };
-    };
-
     let stylesToInsert = [];
 
     if (req.body.styles && Array.isArray(req.body.styles)) {
-        // 并行获取店铺信息
-        const shopInfos = await Promise.all(req.body.styles.map((s: any) => getShopInfo(s.shopId)));
-
-        stylesToInsert = req.body.styles.map((s: any, index: number) => ({
+        stylesToInsert = req.body.styles.map((s: any) => ({
             push_type: 'PRIVATE',
             shop_id: s.shopId,
-            shop_name: shopInfos[index].shop_name,
-            // key_name: shopInfos[index].key_name, // Removed causing error
+            shop_name: s.shopName,
             image_url: s.imageUrl,
             name: s.name,
+            ref_link: s.refLink || '', // Fix
             remark: s.remark,
             tags: s.tags,
             days_left: s.deadline || 3,
             status: 'new',
             timestamp_label: '刚刚',
             created_at: new Date().toISOString(),
-            created_by: buyerName
+            created_by: buyerName,
+            handler_name: buyerName // Fix
         }));
     } else {
-        const { shopIds, imageUrl, name, remark, deadline, tags, refLink } = req.body;
+        const { shopIds, imageUrl, name, remark, deadline, tags } = req.body;
         if (!shopIds || !Array.isArray(shopIds)) {
             return res.status(400).json({ error: 'Invalid payload: shopIds or styles required' });
         }
-
-        const shopInfos = await Promise.all(shopIds.map((id: string) => getShopInfo(id)));
-
-        stylesToInsert = shopIds.map((shopId: string, index: number) => ({
+        stylesToInsert = shopIds.map((shopId: string) => ({
             push_type: 'PRIVATE',
             shop_id: shopId,
-            shop_name: shopInfos[index].shop_name,
-            // key_name: shopInfos[index].key_name, // Removed causing error
             image_url: imageUrl,
-            ref_link: refLink || null,
             name,
+            ref_link: req.body.refLink || '', // Fix: Save refLink
             remark,
             tags: tags || [],
             days_left: deadline || 3,
             status: 'new',
             timestamp_label: '刚刚',
             created_at: new Date().toISOString(),
-            created_by: buyerName
+            created_by: buyerName,
+            handler_name: buyerName // Fix: Save handler_name
         }));
     }
 
@@ -473,6 +407,7 @@ router.post('/push/public', async (req, res) => {
         .insert({
             image_url: imageUrl,
             name,
+            ref_link: req.body.refLink || '', // Fix: Save refLink
             tags,
             max_intents: maxIntents || 5,
             intent_count: 0,
@@ -483,6 +418,195 @@ router.post('/push/public', async (req, res) => {
 
     if (error) return res.status(500).json({ error: error.message });
     res.json(data);
+});
+
+// POST /api/admin/push/transfer/public - 将私推款式转入公池
+router.post('/push/transfer/public', async (req, res) => {
+    const { styleId } = req.body;
+    const buyerName = req.headers['x-buyer-name'] as string || 'Unknown';
+
+    if (!styleId) {
+        return res.status(400).json({ error: 'Style ID is required' });
+    }
+
+    try {
+        // 1. 获取私推款式信息
+        const { data: privateStyle, error: fetchError } = await supabase
+            .from('b_style_demand')
+            .select('*')
+            .eq('id', styleId)
+            .single();
+
+        if (fetchError || !privateStyle) {
+            return res.status(404).json({ error: 'Private style not found' });
+        }
+
+        // 2. 插入到公池 b_public_style
+        // 注意：公池不需要 shop_id，且 ref_link 从私推记录继承
+        const { data: publicStyle, error: insertError } = await supabase
+            .from('b_public_style')
+            .insert({
+                image_url: privateStyle.image_url,
+                name: privateStyle.name,
+                ref_link: privateStyle.ref_link || '',
+                tags: privateStyle.tags || [],
+                max_intents: 5, // 默认额度
+                intent_count: 0,
+                created_by: buyerName,
+                created_at: new Date().toISOString()
+            })
+            .select()
+            .single();
+
+        if (insertError) {
+            throw insertError;
+        }
+
+        // 3. 更新私推记录状态（可选，或者直接在前端更新显示）
+        // 这里我们可以将私推记录标记为 'transferred' 或保持原样，
+        // 但通常业务逻辑是：转入公池后，原私推记录流程结束或并不受影响。
+        // 这里仅返回成功即可。
+
+        res.json({ success: true, publicStyle });
+    } catch (err: any) {
+        console.error('Transfer to public pool error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// GET /api/admin/push/history-grouped - 获取分组后的推款历史
+router.get('/push/history-grouped', async (req, res) => {
+    const page = parseInt(req.query.page as string) || 1;
+    const pageSize = parseInt(req.query.pageSize as string) || 50;
+    const filterType = req.query.type as string; // 'all', 'private', 'public'
+    const search = req.query.search as string;
+
+    try {
+        // 1. Fetch data logic (similar to frontend but optimized)
+        // We fetch enough records to form pages. Since we group by style, 100 records might yield 20 groups.
+        // To be safe for "page 1", we fetch ~500 records. For deep pagination, this approach has limits,
+        // but it's better than fetching EVERYTHING on client.
+        const FETCH_LIMIT = 1000;
+
+        const { data: privateData, error: privateError } = await supabase
+            .from('b_style_demand')
+            .select(`
+                id, created_at, status, shop_id,
+                image_url, name, ref_link, push_type,
+                development_status, handler_name,
+                sys_shop ( id, shop_name, key_id, key_name, shop_code )
+            `)
+            .order('created_at', { ascending: false })
+            .limit(FETCH_LIMIT);
+
+        if (privateError) throw privateError;
+
+        const { data: publicData, error: publicError } = await supabase
+            .from('b_public_style')
+            .select('*')
+            .order('created_at', { ascending: false })
+            .limit(FETCH_LIMIT); // fetch most recent public styles
+
+        if (publicError) throw publicError;
+
+        // 2. Grouping Logic
+        const allRecords = [];
+
+        // Group private styles
+        const groupedMap = new Map();
+        (privateData || []).forEach((s: any) => {
+            // Key: image + name + link
+            const key = `${s.image_url}|${s.name}|${s.ref_link || ''}`;
+
+            if (!groupedMap.has(key)) {
+                groupedMap.set(key, {
+                    id: s.id,
+                    link: s.ref_link || '',
+                    image_url: s.image_url || '',
+                    style_name: s.name || '未命名款式',
+                    push_type: 'private',
+                    first_push_time: s.created_at,
+                    last_push_time: s.created_at,
+                    target_count: 3,
+                    accepted_count: 0,
+                    shops: [],
+                    handler_name: s.handler_name
+                });
+            }
+
+            const record = groupedMap.get(key);
+            // Update time range
+            if (new Date(s.created_at) < new Date(record.first_push_time)) record.first_push_time = s.created_at;
+            if (new Date(s.created_at) > new Date(record.last_push_time)) record.last_push_time = s.created_at;
+
+            // Determine Status
+            let status = 'pending';
+            if (s.status === 'developing') status = 'accepted';
+            else if (s.status === 'rejected') status = 'rejected';
+
+            if (status === 'accepted') record.accepted_count++;
+
+            // Shop info from join
+            const shopInfo = s.sys_shop || { shop_name: '未知店铺' };
+
+            record.shops.push({
+                id: s.shop_id,
+                name: shopInfo.shop_name,
+                key_id: shopInfo.key_id,
+                key_name: shopInfo.key_name || shopInfo.key_id,
+                shop_code: shopInfo.shop_code,
+                status: status,
+                development_status: s.development_status,
+                push_time: s.created_at
+            });
+        });
+
+        allRecords.push(...Array.from(groupedMap.values()));
+
+        // Public styles (usually unique)
+        (publicData || []).forEach((s: any) => {
+            allRecords.push({
+                id: s.id,
+                link: s.ref_link || '',
+                image_url: s.image_url || '',
+                style_name: s.name || '未命名款式',
+                push_type: 'public',
+                first_push_time: s.created_at,
+                last_push_time: s.created_at,
+                target_count: s.max_intents || 3,
+                accepted_count: s.intent_count || 0,
+                shops: [] // Public styles display differently in frontend, or have no specific shops yet
+            });
+        });
+
+        // 3. Sort & Filter & Paginate
+        // Sort by last_push_time desc
+        allRecords.sort((a, b) => new Date(b.last_push_time).getTime() - new Date(a.last_push_time).getTime());
+
+        // Filter
+        let filtered = allRecords;
+        if (filterType && filterType !== 'all') {
+            filtered = filtered.filter(r => r.push_type === filterType);
+        }
+        if (search) {
+            const lower = search.toLowerCase();
+            filtered = filtered.filter(r =>
+                r.style_name.toLowerCase().includes(lower) ||
+                r.link.toLowerCase().includes(lower) ||
+                r.shops.some((s: any) => s.name.toLowerCase().includes(lower) || (s.key_name && s.key_name.toLowerCase().includes(lower)))
+            );
+        }
+
+        const total = filtered.length;
+        const start = (page - 1) * pageSize;
+        const pageData = filtered.slice(start, start + pageSize);
+
+        res.json({ data: pageData, total, page, pageSize });
+
+    } catch (err: any) {
+        console.error('Grouped history error:', err);
+        res.status(500).json({ error: err.message });
+    }
 });
 
 // GET /api/admin/push/history - 推送历史
@@ -514,35 +638,22 @@ router.get('/spu', async (req, res) => {
     const search = req.query.search as string;
     const offset = (page - 1) * pageSize;
 
-    // 从 sys_spu 表获取数据，并关联 b_style_demand 获取名称和链接
+    // 从已完成开发的款式中获取SPU
     let query = supabase
-        .from('sys_spu')
-        .select('id, spu_code, image_url, created_at, b_style_demand!inner(name, shop_name, ref_link)', { count: 'exact' })
+        .from('b_style_demand')
+        .select('id, name, image_url, back_spu, shop_name, created_at', { count: 'exact' })
+        .eq('status', 'completed')
+        .not('back_spu', 'is', null)
         .order('created_at', { ascending: false })
         .range(offset, offset + pageSize - 1);
 
     if (search) {
-        // Note: filtering on joined tables is tricky in simple query, might need RPC or simpler search
-        // For now, assume search is on spu_code
-        query = query.ilike('spu_code', `%${search}%`);
+        query = query.or(`name.ilike.%${search}%,back_spu.ilike.%${search}%`);
     }
 
     const { data, error, count } = await query;
     if (error) return res.status(500).json({ error: error.message });
-
-    // Flatten data for frontend
-    const flatData = (data || []).map((item: any) => ({
-        id: item.id,
-        spu_code: item.spu_code, // Use spu_code as the main identifier
-        back_spu: item.spu_code, // Keep back_spu for compatibility if frontend expects it
-        image_url: item.image_url,
-        link: item.b_style_demand?.ref_link || '',
-        name: item.b_style_demand?.name || 'Unknown',
-        shop_name: item.b_style_demand?.shop_name || 'Unknown',
-        created_at: item.created_at
-    }));
-
-    res.json({ data: flatData, total: count || 0, page, pageSize });
+    res.json({ data: data || [], total: count || 0, page, pageSize });
 });
 
 // DELETE /api/admin/spu/:id - 删除SPU记录（清除back_spu字段）
@@ -556,86 +667,6 @@ router.delete('/spu/:id', async (req, res) => {
 
     if (error) return res.status(500).json({ error: error.message });
     res.json({ success: true });
-});
-
-// POST /api/admin/styles/:id/confirm - 问题12修复：确认SPU，归入SPU库
-router.post('/styles/:id/confirm', async (req, res) => {
-    const { id } = req.params;
-
-    // 1. 获取当前款式信息
-    const { data: style, error: fetchError } = await supabase
-        .from('b_style_demand')
-        .select('back_spu, image_url, shop_id')
-        .eq('id', id)
-        .single();
-
-    if (fetchError || !style) {
-        return res.status(404).json({ error: 'Style not found' });
-    }
-
-    // 2. 更新状态
-    const { error: updateError } = await supabase
-        .from('b_style_demand')
-        .update({
-            status: 'completed',
-            development_status: 'success', // Fix: Update development_status
-            updated_at: new Date().toISOString()
-        })
-        .eq('id', id);
-
-    if (updateError) return res.status(500).json({ error: updateError.message });
-
-    // 3. 插入到 SPU 库 (sys_spu)
-    // sys_spu 表结构: id, spu_code, image_url, style_demand_id, shop_id, created_at
-    if (style.back_spu) {
-        const { error: insertError } = await supabase
-            .from('sys_spu')
-            .insert({
-                spu_code: style.back_spu,
-                image_url: style.image_url,
-                style_demand_id: id, // Correct column name found via inspection
-                shop_id: style.shop_id,
-                created_at: new Date().toISOString()
-            });
-
-        if (insertError) {
-            console.error('Failed to insert into sys_spu:', insertError);
-            // Non-blocking error? Or should we rollback?
-            // For now, log it but return success for the transaction as style is updated.
-            // Ideally we should use a transaction or rollback update.
-            return res.status(500).json({ error: `Style updated but SPU insert failed: ${insertError.message}` });
-        }
-    }
-
-    res.json({ success: true, message: 'SPU已确认归入库' });
-});
-
-// POST /api/admin/styles/:id/reply - 回复帮看/打版请求
-router.post('/styles/:id/reply', async (req, res) => {
-    const { id } = req.params;
-    const { replyImage, replyContent } = req.body;
-
-    const replyData = {
-        image: replyImage,
-        content: replyContent,
-        time: new Date().toISOString(),
-        processor: decodeURIComponent(req.headers['x-buyer-name'] as string || 'Admin')
-    };
-
-    const { data: current } = await supabase.from('b_style_demand').select('extra_info').eq('id', id).single();
-    const newExtraInfo = { ...(current?.extra_info || {}), reply: replyData };
-
-    const { error } = await supabase
-        .from('b_style_demand')
-        .update({
-            development_status: 'drafting',
-            extra_info: newExtraInfo,
-            updated_at: new Date().toISOString()
-        })
-        .eq('id', id);
-
-    if (error) return res.status(500).json({ error: error.message });
-    res.json({ success: true, message: '已回复并退回商家开发中状态' });
 });
 
 // ============ 款式管理（管理后台视角） ============
@@ -654,37 +685,12 @@ router.get('/styles', async (req, res) => {
         .order('created_at', { ascending: false })
         .range(offset, offset + pageSize - 1);
 
-    if (status && status !== 'all') query = query.eq('status', status);
+    if (status) query = query.eq('status', status);
     if (shopId) query = query.eq('shop_id', shopId);
 
-    const { data: styleData, error, count } = await query;
+    const { data, error, count } = await query;
     if (error) return res.status(500).json({ error: error.message });
-
-    // Patch: Fetch shop info to get key_id
-    // ensure unique shopIds and filter out nulls
-    const shopIds = Array.from(new Set((styleData || []).map(s => s.shop_id).filter(id => id)));
-
-    const shopMap = new Map();
-    if (shopIds.length > 0) {
-        const { data: shops } = await supabase
-            .from('sys_shop')
-            .select('id, key_id, shop_code')
-            .in('id', shopIds);
-
-        (shops || []).forEach(s => shopMap.set(s.id, s));
-    }
-
-    const joinedData = (styleData || []).map(s => ({
-        ...s,
-        key_id: shopMap.get(s.shop_id)?.key_id || '',
-        shop_code: shopMap.get(s.shop_id)?.shop_code || '',
-        handler_name: (() => {
-            const raw = s.extra_info?.reply?.processor || s.handler_name || '';
-            try { return decodeURIComponent(raw); } catch { return raw; }
-        })()
-    }));
-
-    res.json({ data: joinedData || [], total: count || 0, page, pageSize });
+    res.json({ data: data || [], total: count || 0, page, pageSize });
 });
 
 // ============ 补货订单（管理后台视角） ============
@@ -737,16 +743,9 @@ router.delete('/demo/cleanup', async (req, res) => {
 
 // ============ 系统数据清理 ============
 
-// DELETE /api/admin/system/cleanup - 清空所有工单数据（款式、核价、异常、大货、公池、物流）
+// DELETE /api/admin/system/cleanup - 清空所有工单数据（款式、核价、异常、大货、公池）
 router.delete('/system/cleanup', async (req, res) => {
     try {
-        // 0. 清空物流记录 (b_restock_logistics) - Dependency of restock_order
-        const { error: logisticsError } = await supabase
-            .from('b_restock_logistics')
-            .delete()
-            .neq('id', '00000000-0000-0000-0000-000000000000');
-        if (logisticsError) throw logisticsError;
-
         // 1. 清空款式工单 (b_style_demand)
         const { error: styleError } = await supabase
             .from('b_style_demand')

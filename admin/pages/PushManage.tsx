@@ -122,7 +122,10 @@ const PushManage: React.FC = () => {
             const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
             const res = await fetch(`${API_BASE}/api/admin/push/private`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-buyer-name': 'Admin' // Fix: Send buyer name or get from auth context
+                },
                 body: JSON.stringify({
                     shopIds: selectedShopIds, // 直接使用用户选中的店铺 ID
                     imageUrl: privateImage,
@@ -171,6 +174,7 @@ const PushManage: React.FC = () => {
                 body: JSON.stringify({
                     imageUrl: publicImage,
                     name: publicName, // Use user input
+                    refLink: publicLink, // Include refLink in public push body
                     remark: publicRemark,
                     tags: [publicVisual, publicStyle],
                     maxIntents: 2

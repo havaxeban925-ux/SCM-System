@@ -4,7 +4,8 @@ export const getHandlerAlias = (name?: string) => {
         '铃酱': '铃',
         '阿允': '允',
         '阿秋': '秋',
-        '阿桃': '桃'
+        '阿桃': '桃',
+        'Admin': '秋' // Fix: Map Admin to 秋
     };
     return map[name] || name.charAt(0);
 };

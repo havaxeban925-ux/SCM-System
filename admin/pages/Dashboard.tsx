@@ -63,6 +63,8 @@ const Dashboard: React.FC = () => {
                 ]);
 
                 if (!dashboardRes.ok) throw new Error('Failed to fetch dashboard data');
+                if (!privateRes.ok) throw new Error('Failed to fetch private styles data');
+                if (!publicRes.ok) throw new Error('Failed to fetch public styles data');
 
                 const dashboardData = await dashboardRes.json();
                 const privateData = await privateRes.json();

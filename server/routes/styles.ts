@@ -10,16 +10,22 @@ router.get('/private', async (req, res) => {
     const shopId = req.query.shopId as string;
     const offset = (page - 1) * pageSize;
 
+    const status = req.query.status as string; // Get status from query
+
     let query = supabase
         .from('b_style_demand')
-        .select('*, sys_shop(shop_code)', { count: 'exact' })
-        .order('created_at', { ascending: false });
+        .select('*', { count: 'exact' });
 
-    // 支持 status=all 查询全部状态，否则默认只查 locked,new
-    const statusFilter = req.query.status as string;
-    if (statusFilter !== 'all') {
+    // Handle status filter
+    if (status === 'all') {
+        // No filter, return all
+    } else if (status) {
+        query = query.eq('status', status);
+    } else {
         query = query.in('status', ['locked', 'new']);
     }
+
+    query = query.order('created_at', { ascending: false });
 
     // 如果传入了 shopId，则仅显示该商铺的私推；
     // 如果没有传且角色不是管理员，可能需要通过中间件处理，但这里我们先支持前端传参。
@@ -29,25 +35,7 @@ router.get('/private', async (req, res) => {
 
     const { data, error, count } = await query.range(offset, offset + pageSize - 1);
     if (error) return res.status(500).json({ error: error.message });
-
-    // 手动关联查询 shop_code (因为可能缺少外键关联)
-    let enrichedData = data || [];
-    if (data && data.length > 0) {
-        const shopIds = [...new Set(data.map(d => d.shop_id).filter(Boolean))];
-        const { data: shops } = await supabase
-            .from('sys_shop')
-            .select('id, shop_code')
-            .in('id', shopIds);
-
-        const shopMap = new Map(shops?.map(s => [s.id, s.shop_code]) || []);
-
-        enrichedData = data.map(d => ({
-            ...d,
-            sys_shop: { shop_code: shopMap.get(d.shop_id) }
-        }));
-    }
-
-    res.json({ data: enrichedData, total: count || 0, page, pageSize });
+    res.json({ data: data || [], total: count || 0, page, pageSize });
 });
 
 // GET /api/styles/quota-stats - 获取当前商铺的名额统计
@@ -65,10 +53,7 @@ router.get('/quota-stats', async (req, res) => {
         .eq('shop_id', shopId)
         .in('status', ['locked', 'developing']);
 
-    if (error) {
-        console.error('Error fetching quota stats:', error);
-        return res.status(500).json({ error: error.message });
-    }
+    if (error) return res.status(500).json({ error: error.message });
 
     res.json({
         current: count || 0,
@@ -115,7 +100,7 @@ router.post('/:id/abandon', async (req, res) => {
     const { error } = await supabase
         .from('b_style_demand')
         .update({
-            status: 'new',
+            status: 'rejected',
             development_status: null,
             confirm_time: null,
             updated_at: new Date().toISOString()
@@ -126,19 +111,13 @@ router.post('/:id/abandon', async (req, res) => {
     res.json({ success: true });
 });
 
-// POST /api/styles/public/:id/intent - 表达意向（问题3修复：添加到私推）
+// POST /api/styles/public/:id/intent - 表达意向
 router.post('/public/:id/intent', async (req, res) => {
     const { id } = req.params;
-    const { shopId, shopName } = req.body;
 
-    if (!shopId || !shopName) {
-        return res.status(400).json({ error: 'shopId and shopName are required' });
-    }
-
-    // 查询当前款式状态
     const { data: style, error: fetchError } = await supabase
         .from('b_public_style')
-        .select('*')
+        .select('intent_count, max_intents')
         .eq('id', id)
         .single();
 
@@ -146,37 +125,17 @@ router.post('/public/:id/intent', async (req, res) => {
         return res.status(404).json({ error: 'Style not found' });
     }
 
-    const newCount = style.intent_count + 1;
+    if (style.intent_count >= style.max_intents) {
+        return res.status(400).json({ error: 'Max intents reached' });
+    }
 
-    // 创建私推记录（状态为locked，表示意向中）
-    const { data: newDemand, error: insertError } = await supabase
-        .from('b_style_demand')
-        .insert({
-            push_type: 'POOL',
-            shop_id: shopId,
-            shop_name: shopName,
-            image_url: style.image_url,
-            name: style.name,
-            remark: '公池意向款',
-            timestamp_label: '刚刚',
-            status: 'locked', // 意向状态
-            source_public_id: id,
-            handler_name: decodeURIComponent(req.get('X-Buyer-Name') || ''), // OPT-1: 记录推款人(处理人)
-            created_at: new Date().toISOString()
-        })
-        .select()
-        .single();
-
-    if (insertError) return res.status(500).json({ error: insertError.message });
-
-    // 更新公池计数
     const { error } = await supabase
         .from('b_public_style')
-        .update({ intent_count: newCount })
+        .update({ intent_count: style.intent_count + 1 })
         .eq('id', id);
 
     if (error) return res.status(500).json({ error: error.message });
-    res.json({ success: true, intentCount: newCount, demand: newDemand });
+    res.json({ success: true });
 });
 
 // POST /api/styles/public/:id/confirm - 从公池接款
@@ -184,32 +143,19 @@ router.post('/public/:id/confirm', async (req, res) => {
     const { id } = req.params;
     const { publicStyle, shopId, shopName } = req.body;
 
-    if (shopId) {
-        const { data: existing } = await supabase
-            .from('b_style_demand')
-            .select('id')
-            .eq('source_public_id', id)
-            .eq('shop_id', shopId)
-            .single();
-
-        if (existing) {
-            return res.status(400).json({ error: '您已接该款，请勿重复接款' });
-        }
-    }
-
     const newStyle = {
         push_type: 'POOL',
         shop_id: shopId || null,
         shop_name: shopName || '公池商家',
         image_url: publicStyle?.image_url,
         name: publicStyle?.name,
+        ref_link: publicStyle?.ref_link, // Fix: Copy ref_link
         remark: '从公海池直接接款开发',
         timestamp_label: '刚刚',
         status: 'developing',
         development_status: 'drafting',
         confirm_time: new Date().toISOString(),
-        source_public_id: id, // OPT-10: 记录公池来源
-        handler_name: decodeURIComponent(req.get('X-Buyer-Name') || '') // OPT-1: 记录推款人
+        source_public_id: id // OPT-10: 记录公池来源
     };
 
     const { data, error } = await supabase
