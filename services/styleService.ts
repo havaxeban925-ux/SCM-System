@@ -48,9 +48,13 @@ export async function abandonStyle(id: string): Promise<boolean> {
 }
 
 // 从公池创建新款式需求并接款
-export async function createAndConfirmPublicStyle(publicStyle: PublicStyle): Promise<StyleDemand | null> {
+export async function createAndConfirmPublicStyle(publicStyle: PublicStyle, shopId?: string, shopName?: string): Promise<StyleDemand | null> {
     try {
-        return await api.post<StyleDemand>(`/api/styles/public/${publicStyle.id}/confirm`, { publicStyle });
+        return await api.post<StyleDemand>(`/api/styles/public/${publicStyle.id}/confirm`, {
+            publicStyle,
+            shopId,
+            shopName
+        });
     } catch (error) {
         console.error('Error creating style from public pool:', error);
         return null;

@@ -38,8 +38,13 @@ export interface StyleDemand {
   back_spu?: string;
   is_modify_img: boolean;
   real_img_url?: string;
+  extra_info?: { reply?: { image?: string; content?: string; time?: string; processor?: string } };
+  shop_code?: string;
   created_at: string;
   updated_at: string;
+  sys_shop?: {
+    shop_code?: string;
+  };
 }
 
 export interface PublicStyle {

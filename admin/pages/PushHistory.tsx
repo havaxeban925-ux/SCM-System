@@ -16,13 +16,16 @@ interface PushRecord {
         name: string;
         key_id?: string;
         key_name?: string;
+        shop_code?: string; // Add shop_code
         status: 'pending' | 'accepted' | 'rejected';
+        development_status?: string; // 开发状态
         push_time: string;
         shops: Array<{
             id: string;
             name: string;
             key_id?: string;
             key_name?: string;
+            shop_code?: string; // Add shop_code
             status: 'pending' | 'accepted' | 'rejected';
             push_time: string;
         }>;
@@ -36,6 +39,7 @@ interface Shop {
     shop_name: string;
     key_id?: string;
     key_name?: string;
+    shop_code?: string; // Add shop_code
 }
 
 const PushHistory: React.FC = () => {
@@ -74,7 +78,8 @@ const PushHistory: React.FC = () => {
                         id: s.id,
                         shop_name: s.shop_name,
                         key_id: s.key_id,
-                        key_name: s.key_name || s.key_id // Fallback to ID if name missing
+                        key_name: s.key_name || s.key_id, // Fallback to ID if name missing
+                        shop_code: s.shop_code // Map shop_code
                     });
                 });
 
@@ -125,9 +130,12 @@ const PushHistory: React.FC = () => {
                         id: s.shop_id,
                         name: s.shop_name || shopInfo.shop_name,
                         key_id: s.key_id || shopInfo.key_id,
-                        key_name: s.key_name || shopInfo.key_name, // Prefer record's key_name, then shopMap
+                        key_name: s.key_name || shopInfo.key_name,
+                        shop_code: s.shop_code || shopInfo.shop_code,
                         status: status,
-                        push_time: s.created_at
+                        development_status: s.development_status, // 保存开发状态
+                        push_time: s.created_at,
+                        shops: []
                     });
                 });
 
@@ -281,8 +289,7 @@ const PushHistory: React.FC = () => {
                                                     width: 32,
                                                     height: 32,
                                                     borderRadius: '50%',
-                                                    background: getHandlerColor(record.handler_name),
-                                                    color: '#fff',
+                                                    ...getHandlerColor(record.handler_name),
                                                     display: 'flex',
                                                     alignItems: 'center',
                                                     justifyContent: 'center',
@@ -410,6 +417,7 @@ const PushHistory: React.FC = () => {
                                     <thead>
                                         <tr>
                                             <th>KEY 名称</th>
+                                            <th>店铺ID</th>
                                             <th>店铺名称</th>
                                             <th>推送时间</th>
                                             <th>状态</th>
@@ -419,11 +427,15 @@ const PushHistory: React.FC = () => {
                                         {detailModal.record.shops.map(shop => (
                                             <tr key={shop.id}>
                                                 <td style={{ fontWeight: 600 }}>{shop.key_name || '-'}</td>
+                                                <td style={{ fontFamily: 'monospace' }}>{shop.shop_code || '-'}</td>
                                                 <td>{shop.name}</td>
                                                 <td style={{ fontSize: 11, color: 'var(--text-muted)' }}>{formatDate(shop.push_time)}</td>
                                                 <td>
-                                                    <span className={`status-badge ${shop.status === 'accepted' ? 'completed' : shop.status === 'rejected' ? 'rejected' : 'processing'}`}>
-                                                        {shop.status === 'accepted' ? '已接款' : shop.status === 'rejected' ? '已拒绝' : '待处理'}
+                                                    <span className={`status-badge ${shop.development_status === 'success' ? 'completed' : shop.development_status === 'abandoned' ? 'rejected' : 'processing'}`}>
+                                                        {/* 状态显示逻辑: pending→待确认, abandoned→已放弃, success→已完成, 其他→打版中 */}
+                                                        {shop.development_status === 'abandoned' ? '已放弃' :
+                                                            shop.development_status === 'success' ? '已完成' :
+                                                                shop.status === 'pending' ? '待确认' : '打版中'}
                                                     </span>
                                                 </td>
                                             </tr>

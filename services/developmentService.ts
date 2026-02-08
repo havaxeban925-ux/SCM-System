@@ -28,12 +28,23 @@ export async function updateDevStatus(
 }
 
 // 申请改图帮看
-export async function requestHelping(id: string, imageUrl?: string): Promise<boolean> {
+export async function requestHelping(id: string, schemes?: any[], remark?: string): Promise<boolean> {
     try {
-        await api.post(`/api/development/${id}/helping`, { imageUrl });
+        await api.post(`/api/development/${id}/helping`, { schemes, remark });
         return true;
     } catch (error) {
         console.error('Error requesting helping:', error);
+        return false;
+    }
+}
+
+// 申请打版帮看
+export async function requestPattern(id: string, schemes?: any[], remark?: string): Promise<boolean> {
+    try {
+        await api.post(`/api/development/${id}/pattern`, { schemes, remark });
+        return true;
+    } catch (error) {
+        console.error('Error requesting pattern:', error);
         return false;
     }
 }

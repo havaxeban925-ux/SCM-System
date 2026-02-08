@@ -39,8 +39,25 @@ const StyleManage: React.FC = () => {
         setLoading(false);
     };
 
+    const handleConfirmSpu = async (id: string) => {
+        if (!confirm('确认审核通过并录入SPU库吗？')) return;
+        try {
+            const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+            const res = await fetch(`${API_BASE}/api/development/${id}/spu-confirm`, {
+                method: 'POST'
+            });
+            if (!res.ok) throw new Error('Failed');
+            alert('审核通过，已录入SPU库');
+            loadStyles();
+        } catch (err) {
+            alert('操作失败');
+        }
+    };
+
     const filteredStyles = styles.filter(s => {
         if (filter === 'all') return true;
+        // spu_verify 在 development_status 中，其他在 status 中
+        if (filter === 'spu_verify') return s.development_status === 'spu_verify';
         return s.status === filter;
     });
 
@@ -49,6 +66,7 @@ const StyleManage: React.FC = () => {
             new: '待处理',
             locked: '已锁定',
             developing: '开发中',
+            spu_verify: 'SPU待审核',
             completed: '已完成',
             abandoned: '已放弃',
         };
@@ -73,6 +91,7 @@ const StyleManage: React.FC = () => {
                         <option value="new">待处理</option>
                         <option value="locked">已锁定</option>
                         <option value="developing">开发中</option>
+                        <option value="spu_verify">SPU待审核</option>
                         <option value="completed">已完成</option>
                     </select>
                     <button className="btn btn-outline" onClick={loadStyles}>
@@ -114,12 +133,21 @@ const StyleManage: React.FC = () => {
                                     <td>{style.shop_name || '-'}</td>
                                     <td>{style.push_type === 'POOL' ? '公池' : '私推'}</td>
                                     <td>
-                                        <span className={`status-badge ${style.status}`}>
-                                            {getStatusBadge(style.status)}
+                                        <span className={`status-badge ${style.development_status === 'spu_verify' ? 'spu_verify' : style.status}`}>
+                                            {style.development_status === 'spu_verify' ? 'SPU待审核' : getStatusBadge(style.status)}
                                         </span>
                                     </td>
                                     <td>
                                         <div className="action-buttons">
+                                            {style.development_status === 'spu_verify' && (
+                                                <button
+                                                    className="btn btn-sm btn-success"
+                                                    onClick={() => handleConfirmSpu(style.id)}
+                                                    style={{ marginRight: 8 }}
+                                                >
+                                                    提交
+                                                </button>
+                                            )}
                                             <button className="btn btn-sm btn-outline">编辑</button>
                                             <button className="btn btn-sm btn-danger">删除</button>
                                         </div>

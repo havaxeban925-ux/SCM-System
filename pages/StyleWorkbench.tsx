@@ -16,7 +16,7 @@ function toStyleItem(s: StyleDemand): StyleItem {
     id: s.id,
     name: s.name,
     image: s.image_url || '',
-    shopId: s.shop_id || '',
+    shopId: s.sys_shop?.shop_code || s.shop_id || '',
     shopName: s.shop_name || '',
     remark: s.remark || '',
     timestamp: s.timestamp_label || '',
@@ -116,44 +116,85 @@ const StyleWorkbench: React.FC<Props> = ({ availableStyles: propStyles, onConfir
     }
   };
 
+  // 处理中的款式ID（防抖）
+  const [processingId, setProcessingId] = useState<string | null>(null);
+
+  // ... (existing code)
+
   const handleConfirmPublicStyle = async (style: PublicStyle) => {
-    const newStyle = await createAndConfirmPublicStyle(style);
-    if (newStyle) {
-      const styleItem = toStyleItem(newStyle);
-      onConfirmStyle(styleItem);
+    if (processingId === style.id) return;
+    setProcessingId(style.id);
+
+    try {
+      const userData = localStorage.getItem('merchantUser');
+      const user = userData ? JSON.parse(userData) : null;
+      const currentShopName = user?.shop_name || user?.shops?.[0]?.shop_name || '未知店铺';
+
+      // 如果没有 shopId (prop)，尝试从 user 中获取
+      const currentShopId = shopId || user?.shop_id || user?.shops?.[0]?.id;
+
+      if (!currentShopId) {
+        alert('无法获取当前店铺信息，请重新登录');
+        return;
+      }
+
+      const newStyle = await createAndConfirmPublicStyle(style, currentShopId, currentShopName);
+      if (newStyle) {
+        const styleItem = toStyleItem(newStyle);
+        onConfirmStyle(styleItem);
+        alert('接款成功！已创建私推需求');
+      } else {
+        alert('接款失败，请重试');
+      }
+    } catch (err) {
+      console.error('Confirm public style error:', err);
+      alert('接款失败，发生错误');
+    } finally {
+      setProcessingId(null);
     }
   };
 
   const handleExpressIntent = async (style: PublicStyle) => {
-    const userData = localStorage.getItem('merchantUser');
-    const user = userData ? JSON.parse(userData) : null;
-    const currentShopName = user?.shop_name || user?.shops?.[0]?.shop_name || '未知店铺';
+    if (processingId === style.id) return;
+    setProcessingId(style.id);
 
-    const success = await expressIntent(style.id, shopId, currentShopName);
-    if (success) {
-      alert('意向表达成功！已添加到私推列表');
-      // 更新公池款式的意向计数
-      setPublicStyles(prev => prev.map(s =>
-        s.id === style.id ? { ...s, intent_count: s.intent_count + 1 } : s
-      ));
-      // 问题3修复：重新加载私推列表（因为后端现在会创建私推记录）
-      try {
-        const privateData = await getPrivateStyles(shopId);
-        setPrivateStyles(privateData.map(toStyleItem));
-      } catch (err) {
-        console.error('Failed to reload private styles:', err);
-      }
-      // 问题4修复：重新加载名额统计
-      if (shopId) {
+    try {
+      const userData = localStorage.getItem('merchantUser');
+      const user = userData ? JSON.parse(userData) : null;
+      const currentShopName = user?.shop_name || user?.shops?.[0]?.shop_name || '未知店铺';
+
+      const success = await expressIntent(style.id, shopId, currentShopName);
+      if (success) {
+        alert('意向表达成功！已添加到私推列表');
+        // 更新公池款式的意向计数
+        setPublicStyles(prev => prev.map(s =>
+          s.id === style.id ? { ...s, intent_count: s.intent_count + 1 } : s
+        ));
+        // 问题3修复：重新加载私推列表
         try {
-          const stats = await getQuotaStats(shopId);
-          if (stats) setQuota(stats);
+          const privateData = await getPrivateStyles(shopId);
+          setPrivateStyles(privateData.map(toStyleItem));
         } catch (err) {
-          console.error('Failed to reload quota stats:', err);
+          console.error('Failed to reload private styles:', err);
+        }
+        // 问题4修复：重新加载名额统计
+        if (shopId) {
+          try {
+            const stats = await getQuotaStats(shopId);
+            if (stats) setQuota(stats);
+          } catch (err) {
+            console.error('Failed to reload quota stats:', err);
+          }
         }
       }
+    } catch (err) {
+      console.error('Express intent error:', err);
+    } finally {
+      setProcessingId(null);
     }
   };
+
+
 
   const allStyles = privateStyles.length > 0 ? privateStyles : propStyles;
   const privateTotalPages = Math.ceil(allStyles.length / PRIVATE_PAGE_SIZE) || 1;
@@ -299,16 +340,17 @@ const StyleWorkbench: React.FC<Props> = ({ availableStyles: propStyles, onConfir
                   <div className="grid grid-cols-2 gap-1 mt-auto">
                     <button
                       onClick={() => handleExpressIntent(style)}
-                      disabled={style.intent_count >= style.max_intents}
-                      className="border border-primary/30 text-primary hover:bg-primary/5 py-1 rounded text-[9px] font-bold transition-colors disabled:opacity-50"
+                      disabled={style.intent_count >= style.max_intents || processingId === style.id}
+                      className={`border border-primary/30 text-primary hover:bg-primary/5 py-1 rounded text-[9px] font-bold transition-colors disabled:opacity-50 ${processingId === style.id ? 'cursor-not-allowed opacity-50' : ''}`}
                     >
-                      意向
+                      {processingId === style.id ? '提交中...' : '意向'}
                     </button>
                     <button
                       onClick={() => handleConfirmPublicStyle(style)}
-                      className="bg-primary text-white py-1 rounded font-bold text-[9px] hover:bg-blue-600 shadow-sm transition-colors"
+                      disabled={processingId === style.id}
+                      className={`bg-primary text-white py-1 rounded font-bold text-[9px] hover:bg-blue-600 shadow-sm transition-colors ${processingId === style.id ? 'bg-slate-400 cursor-not-allowed hover:bg-slate-400' : ''}`}
                     >
-                      接款
+                      {processingId === style.id ? '接款中...' : '接款'}
                     </button>
                   </div>
                 </div>
@@ -418,16 +460,17 @@ const StyleWorkbench: React.FC<Props> = ({ availableStyles: propStyles, onConfir
                       <div className="grid grid-cols-2 gap-1 mt-auto">
                         <button
                           onClick={() => handleExpressIntent(style)}
-                          disabled={style.intent_count >= style.max_intents}
-                          className="border border-primary/30 text-primary hover:bg-primary/5 py-1 rounded text-[9px] font-bold transition-colors disabled:opacity-50"
+                          disabled={style.intent_count >= style.max_intents || processingId === style.id}
+                          className={`border border-primary/30 text-primary hover:bg-primary/5 py-1 rounded text-[9px] font-bold transition-colors disabled:opacity-50 ${processingId === style.id ? 'cursor-not-allowed opacity-50' : ''}`}
                         >
-                          意向
+                          {processingId === style.id ? '提交中...' : '意向'}
                         </button>
                         <button
                           onClick={() => handleConfirmPublicStyle(style)}
-                          className="bg-primary text-white py-1 rounded font-bold text-[9px] hover:bg-blue-600 shadow-sm transition-colors"
+                          disabled={processingId === style.id}
+                          className={`bg-primary text-white py-1 rounded font-bold text-[9px] hover:bg-blue-600 shadow-sm transition-colors ${processingId === style.id ? 'bg-slate-400 cursor-not-allowed hover:bg-slate-400' : ''}`}
                         >
-                          接款
+                          {processingId === style.id ? '接款中...' : '接款'}
                         </button>
                       </div>
                     </div>

@@ -400,7 +400,6 @@ const App: React.FC = () => {
       ...prev,
       { ...style, status: 'developing', developmentStatus: 'drafting' }
     ]);
-    setCurrentView(AppView.DEVELOPMENT_PROGRESS);
   };
 
   const handleUpdateDevStatus = (id: string, newStatus: StyleItem['developmentStatus']) => {

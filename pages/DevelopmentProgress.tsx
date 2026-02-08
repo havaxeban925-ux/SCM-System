@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { StyleItem } from '../types';
-import { getDevelopingStyles, updateDevStatus, requestHelping, uploadSpu, abandonDevelopment, confirmHelpingOk } from '../services/developmentService';
+import { getDevelopingStyles, updateDevStatus, requestHelping, requestPattern, uploadSpu, abandonDevelopment, confirmHelpingOk } from '../services/developmentService';
 import { StyleDemand } from '../lib/supabase';
 
 interface Props {
@@ -16,9 +16,12 @@ interface DesignScheme {
   images: string[];
 }
 
-// 扩展 StyleItem 添加 confirmTime
+// 扩展 StyleItem 添加 confirmTime 和 reply
 interface ExtendedStyleItem extends StyleItem {
   confirmTime?: string;
+  updatedAt?: string; // 新增：最近操作时间
+  reply?: { image?: string; content?: string; time?: string; processor?: string };
+  shopCode?: string; // 店铺编码
 }
 
 // 转换数据库格式到前端格式
@@ -35,6 +38,9 @@ function toStyleItem(s: StyleDemand): ExtendedStyleItem {
     daysLeft: s.days_left,
     developmentStatus: s.development_status as StyleItem['developmentStatus'],
     confirmTime: s.confirm_time,
+    updatedAt: s.updated_at, // 映射最近操作时间
+    reply: s.extra_info?.reply,
+    shopCode: s.shop_code, // 映射店铺编码
   };
 }
 
@@ -51,7 +57,7 @@ const statusLabels: Record<string, string> = {
   drafting: '打样中',
   pattern: '打版帮看中',
   helping: '改图帮看中',
-  ok: '待上传SPU',
+  spu_verify: '待审核',
   success: '开发成功'
 };
 
@@ -59,12 +65,13 @@ const statusColors: Record<string, string> = {
   drafting: 'bg-slate-50 text-slate-700 border-slate-200',
   pattern: 'bg-purple-50 text-purple-700 border-purple-200',
   helping: 'bg-blue-50 text-blue-700 border-blue-200',
-  ok: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  spu_verify: 'bg-orange-50 text-orange-700 border-orange-200',
   success: 'bg-indigo-50 text-indigo-700 border-indigo-200'
 };
 
 const DevelopmentProgress: React.FC<Props> = ({ styles: propStyles, onAbandon, onUpdateStatus }) => {
   const [activePopup, setActivePopup] = useState<{ id: string, type: 'helping' | 'pattern' | 'spu' | 'abandon' } | null>(null);
+  const [replyPopup, setReplyPopup] = useState<ExtendedStyleItem | null>(null);
   const [remark, setRemark] = useState('');
   const [loading, setLoading] = useState(true);
   const [styles, setStyles] = useState<ExtendedStyleItem[]>([]);
@@ -95,7 +102,7 @@ const DevelopmentProgress: React.FC<Props> = ({ styles: propStyles, onAbandon, o
 
   // 状态统计
   const statusCounts = useMemo(() => {
-    const counts: Record<string, number> = { drafting: 0, pattern: 0, helping: 0, ok: 0, success: 0 };
+    const counts: Record<string, number> = { drafting: 0, pattern: 0, helping: 0, spu_verify: 0, success: 0 };
     styles.forEach(s => {
       const status = s.developmentStatus || 'drafting';
       if (counts[status] !== undefined) counts[status]++;
@@ -114,12 +121,74 @@ const DevelopmentProgress: React.FC<Props> = ({ styles: propStyles, onAbandon, o
     setSchemes([...schemes, { name: `方案${schemes.length + 1}`, images: [] }]);
   };
 
-  // 模拟添加图片
-  const addImageToScheme = (schemeIndex: number) => {
-    if (schemes[schemeIndex].images.length >= 3) return;
-    const newSchemes = [...schemes];
-    newSchemes[schemeIndex].images.push(`https://picsum.photos/seed/${Date.now()}/200`);
-    setSchemes(newSchemes);
+  // 处理图片上传
+  const handleImageUpload = (schemeIndex: number, e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []) as File[];
+    if (files.length === 0) return;
+
+    const currentImages = schemes[schemeIndex].images;
+    const remainingSlots = 3 - currentImages.length;
+
+    if (remainingSlots <= 0) {
+      alert('每种方案最多只能上传3张图片');
+      return;
+    }
+
+    const filesToProcess = files.slice(0, remainingSlots);
+    if (files.length > remainingSlots) {
+      alert(`最多只能再上传 ${remainingSlots} 张图片，已自动筛选前 ${remainingSlots} 张`);
+    }
+
+    const newImages: string[] = [];
+    let processedCount = 0;
+
+    filesToProcess.forEach(file => {
+      // 验证文件大小（限制1MB）
+      if (file.size > 1024 * 1024) {
+        alert(`图片 ${file.name} 超过1MB，已跳过`);
+        processedCount++; // 即使跳过也计数，以便判断何时更新状态
+        if (processedCount === filesToProcess.length && newImages.length > 0) {
+          const newSchemes = [...schemes];
+          newSchemes[schemeIndex].images = [...currentImages, ...newImages];
+          setSchemes(newSchemes);
+        }
+        return;
+      }
+
+      // 验证文件类型
+      if (!file.type.startsWith('image/')) {
+        alert(`文件 ${file.name} 不是图片，已跳过`);
+        processedCount++;
+        if (processedCount === filesToProcess.length && newImages.length > 0) {
+          const newSchemes = [...schemes];
+          newSchemes[schemeIndex].images = [...currentImages, ...newImages];
+          setSchemes(newSchemes);
+        }
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const base64 = event.target?.result as string;
+        if (base64) {
+          newImages.push(base64);
+        }
+        processedCount++;
+
+        // 所有文件处理完毕后更新状态
+        if (processedCount === filesToProcess.length) {
+          if (newImages.length > 0) {
+            const newSchemes = [...schemes];
+            newSchemes[schemeIndex].images = [...currentImages, ...newImages];
+            setSchemes(newSchemes);
+          }
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+
+    // 清空 input
+    e.target.value = '';
   };
 
   // 移除图片
@@ -143,22 +212,16 @@ const DevelopmentProgress: React.FC<Props> = ({ styles: propStyles, onAbandon, o
       alert('请至少上传一张图片');
       return;
     }
-    const success = await requestHelping(activePopup.id);
+    const success = await requestHelping(activePopup.id, schemes, remark);
     if (success) {
       setStyles(prev => prev.map(s => s.id === activePopup.id ? { ...s, developmentStatus: 'helping' as const } : s));
       onUpdateStatus(activePopup.id, 'helping');
       resetPopup();
-
-      // 模拟3秒后买手确认通过
-      setTimeout(async () => {
-        await confirmHelpingOk(activePopup.id);
-        setStyles(prev => prev.map(s => s.id === activePopup.id ? { ...s, developmentStatus: 'ok' as const } : s));
-        onUpdateStatus(activePopup.id, 'ok');
-      }, 3000);
+      // 用户要求：状态停留在“改图帮看中”，移除由系统自动转为“待上传SPU”的模拟逻辑
     }
   };
 
-  // 打版帮看提交：先显示"打版帮看中"，买手确认后显示"待上传SPU"
+  // 打版帮看提交
   const handlePatternSubmit = async () => {
     if (!activePopup) return;
     const hasImages = schemes.some(s => s.images.length > 0);
@@ -166,19 +229,14 @@ const DevelopmentProgress: React.FC<Props> = ({ styles: propStyles, onAbandon, o
       alert('请至少上传一张图片');
       return;
     }
-    // 更新状态为 pattern（打版帮看中）
-    const success = await updateDevStatus(activePopup.id, 'pattern');
+
+    // 使用专门的 requestPattern 接口
+    const success = await requestPattern(activePopup.id, schemes, remark);
     if (success) {
       setStyles(prev => prev.map(s => s.id === activePopup.id ? { ...s, developmentStatus: 'pattern' as const } : s));
       onUpdateStatus(activePopup.id, 'pattern');
       resetPopup();
-
-      // 模拟3秒后买手确认 -> 待上传SPU
-      setTimeout(async () => {
-        await confirmHelpingOk(activePopup.id);
-        setStyles(prev => prev.map(s => s.id === activePopup.id ? { ...s, developmentStatus: 'ok' as const } : s));
-        onUpdateStatus(activePopup.id, 'ok');
-      }, 3000);
+      // 用户要求：状态停留在“打版帮看中”，移除由系统自动转为“待上传SPU”的模拟逻辑
     }
   };
 
@@ -189,8 +247,8 @@ const DevelopmentProgress: React.FC<Props> = ({ styles: propStyles, onAbandon, o
       const success = await uploadSpu(activePopup.id, remark);
       if (success) {
         // 问题11修复：提交后保留记录，不再自动移除
-        setStyles(prev => prev.map(s => s.id === activePopup.id ? { ...s, developmentStatus: 'success' as const } : s));
-        onUpdateStatus(activePopup.id, 'success');
+        setStyles(prev => prev.map(s => s.id === activePopup.id ? { ...s, developmentStatus: 'spu_verify' as const } : s));
+        onUpdateStatus(activePopup.id, 'spu_verify' as any);
         resetPopup();
         // 已删除自动移除逻辑，SPU上传后记录保留在商家端
       }
@@ -241,13 +299,17 @@ const DevelopmentProgress: React.FC<Props> = ({ styles: propStyles, onAbandon, o
               </div>
             ))}
             {scheme.images.length < 3 && (
-              <button
-                onClick={() => addImageToScheme(sIndex)}
-                className="w-16 h-16 border-2 border-dashed border-slate-300 rounded flex flex-col items-center justify-center text-slate-400 hover:border-primary hover:text-primary transition-colors"
-              >
+              <label className="w-16 h-16 border-2 border-dashed border-slate-300 rounded flex flex-col items-center justify-center text-slate-400 hover:border-primary hover:text-primary transition-colors cursor-pointer">
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="hidden"
+                  onChange={(e) => handleImageUpload(sIndex, e)}
+                />
                 <span className="material-symbols-outlined text-lg">add</span>
-                <span className="text-[9px]">添加</span>
-              </button>
+                <span className="text-[9px]">上传</span>
+              </label>
             )}
           </div>
         </div>
@@ -284,9 +346,9 @@ const DevelopmentProgress: React.FC<Props> = ({ styles: propStyles, onAbandon, o
           <p className="text-slate-500 text-xs font-medium">改图帮看中</p>
           <p className="text-navy-700 text-3xl font-black">{statusCounts.helping}</p>
         </div>
-        <div className="flex flex-col gap-2 rounded-xl p-4 bg-white border-l-4 border-l-emerald-500 border border-slate-200 shadow-sm">
-          <p className="text-slate-500 text-xs font-medium">待上传SPU</p>
-          <p className="text-navy-700 text-3xl font-black">{statusCounts.ok}</p>
+        <div className="flex flex-col gap-2 rounded-xl p-4 bg-white border-l-4 border-l-orange-500 border border-slate-200 shadow-sm">
+          <p className="text-slate-500 text-xs font-medium">待审核</p>
+          <p className="text-navy-700 text-3xl font-black">{statusCounts.spu_verify}</p>
         </div>
         <div className="flex flex-col gap-2 rounded-xl p-4 bg-white border-l-4 border-l-indigo-500 border border-slate-200 shadow-sm">
           <p className="text-slate-500 text-xs font-medium">开发成功</p>
@@ -307,8 +369,9 @@ const DevelopmentProgress: React.FC<Props> = ({ styles: propStyles, onAbandon, o
                 <tr>
                   <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">款式信息</th>
                   <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">当前阶段</th>
-                  <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">买手备注</th>
                   <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">买手反馈</th>
+                  {/* 新增时间列 */}
+                  <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">时间节点</th>
                   <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase text-right">操作</th>
                 </tr>
               </thead>
@@ -323,7 +386,9 @@ const DevelopmentProgress: React.FC<Props> = ({ styles: propStyles, onAbandon, o
                           <div className="size-16 rounded bg-slate-100 bg-cover bg-center border border-slate-200" style={{ backgroundImage: `url(${style.image})` }}></div>
                           <div className="flex flex-col">
                             <span className="text-sm font-bold text-navy-700">{style.name}</span>
-                            <span className="text-[10px] text-slate-500 uppercase font-mono mt-0.5">{style.id.slice(0, 8)}</span>
+                            <span className="text-[10px] text-slate-500 font-mono mt-0.5">
+                              店铺: {style.shopCode || style.shopName || style.shopId?.slice(0, 8) || '-'}
+                            </span>
                             {/* 接款时间（天数） */}
                             <span className={`text-[10px] mt-1 font-medium ${isOverdue ? 'text-red-500' : 'text-slate-400'}`}>
                               接款 {days} 天
@@ -337,12 +402,35 @@ const DevelopmentProgress: React.FC<Props> = ({ styles: propStyles, onAbandon, o
                         </span>
                       </td>
                       <td className="px-6 py-5">
-                        <p className="text-xs text-slate-500 max-w-[200px] line-clamp-2">{style.remark}</p>
+                        {style.reply ? (
+                          <button
+                            onClick={() => setReplyPopup(style)}
+                            className="text-xs text-primary underline hover:text-blue-700"
+                          >
+                            查看买手回复
+                          </button>
+                        ) : (
+                          <span className="text-xs text-slate-400 italic">
+                            {style.developmentStatus === 'ok' ? '买手反馈：已确认，请尽快上传 SPU。' :
+                              style.developmentStatus === 'spu_verify' ? '已提交SPU，等待买手审核。' : '暂无最新留言'}
+                          </span>
+                        )}
                       </td>
+                      {/* 时间节点展示 (放在买手反馈之后) */}
                       <td className="px-6 py-5">
-                        <span className="text-xs text-slate-400 italic">
-                          {style.developmentStatus === 'ok' ? '买手反馈：已确认，请尽快上传 SPU。' : '暂无最新留言'}
-                        </span>
+                        <div className="flex flex-col gap-1 text-[11px]">
+                          {style.confirmTime && (
+                            <span className="text-slate-500">
+                              接款: {new Date(style.confirmTime).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                          )}
+                          {style.updatedAt && (
+                            <span className="text-slate-400">
+                              最近: {new Date(style.updatedAt).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                          )}
+                          {!style.confirmTime && !style.updatedAt && <span className="text-slate-300">-</span>}
+                        </div>
                       </td>
                       <td className="px-6 py-5 text-right">
                         <div className="flex flex-col items-end gap-2">
@@ -359,88 +447,125 @@ const DevelopmentProgress: React.FC<Props> = ({ styles: propStyles, onAbandon, o
                 })}
               </tbody>
             </table>
-          </div>
+          </div >
           {/* 分页控件 */}
-          {totalPages > 1 && (
-            <div className="flex items-center justify-center gap-4 py-4 border-t border-slate-200">
-              <button
-                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                disabled={currentPage === 1}
-                className="px-3 py-1.5 rounded text-xs font-bold border border-slate-200 disabled:opacity-40 hover:bg-slate-100"
-              >
-                上一页
-              </button>
-              <span className="text-sm text-slate-500">
-                第 <span className="font-bold text-navy-700">{currentPage}</span> / {totalPages} 页
-              </span>
-              <button
-                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                disabled={currentPage === totalPages}
-                className="px-3 py-1.5 rounded text-xs font-bold border border-slate-200 disabled:opacity-40 hover:bg-slate-100"
-              >
-                下一页
-              </button>
-            </div>
-          )}
-        </div>
+          {
+            totalPages > 1 && (
+              <div className="flex items-center justify-center gap-4 py-4 border-t border-slate-200">
+                <button
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                  className="px-3 py-1.5 rounded text-xs font-bold border border-slate-200 disabled:opacity-40 hover:bg-slate-100"
+                >
+                  上一页
+                </button>
+                <span className="text-sm text-slate-500">
+                  第 <span className="font-bold text-navy-700">{currentPage}</span> / {totalPages} 页
+                </span>
+                <button
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages}
+                  className="px-3 py-1.5 rounded text-xs font-bold border border-slate-200 disabled:opacity-40 hover:bg-slate-100"
+                >
+                  下一页
+                </button>
+              </div>
+            )
+          }
+        </div >
       )}
 
       {/* 弹窗 */}
-      {activePopup && (
+      {
+        activePopup && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-6">
+            <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={resetPopup}></div>
+            <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md p-8 animate-in zoom-in-95 max-h-[90vh] overflow-y-auto">
+              <h3 className="text-lg font-bold text-navy-700 mb-2">
+                {activePopup.type === 'helping' ? '改图帮看申请' :
+                  activePopup.type === 'pattern' ? '打版帮看申请' :
+                    activePopup.type === 'spu' ? '上传 SPU 信息' : '放弃开发申请'}
+              </h3>
+              {activePopup.type === 'abandon' && <p className="text-[10px] text-red-500 font-bold mb-4 uppercase tracking-tighter">* 此操作不可撤回，款式将退回后端处理</p>}
+              {activePopup.type === 'spu' && <p className="text-[10px] text-amber-500 font-bold mb-4">* 提交后将进入待审版环节</p>}
+
+              <div className="space-y-4">
+                {/* 改图/打版帮看：多方案图片上传 */}
+                {(activePopup.type === 'helping' || activePopup.type === 'pattern') && (
+                  <>
+                    <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">上传图片 (1-3个方案，每方案1-3张图)</label>
+                    <ImageUploadArea />
+                  </>
+                )}
+
+                {/* SPU / 放弃 / 帮看 备注 */}
+                {(activePopup.type === 'spu' || activePopup.type === 'abandon' || activePopup.type === 'helping' || activePopup.type === 'pattern') && (
+                  <div>
+                    <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">
+                      {activePopup.type === 'spu' ? '填写 SPU 编码 (多个请用空格分割)' :
+                        activePopup.type === 'abandon' ? '备注/原因说明' : '备注/需求说明'}
+                    </label>
+                    <textarea
+                      className="w-full border-slate-200 rounded-lg text-sm p-3 min-h-[100px] focus:ring-primary"
+                      placeholder={activePopup.type === 'spu' ? 'SPU001 SPU002...' : '请详细填写理由...'}
+                      value={remark}
+                      onChange={(e) => setRemark(e.target.value)}
+                    />
+                  </div>
+                )}
+              </div>
+              <div className="flex gap-4 mt-8">
+                <button
+                  onClick={
+                    activePopup.type === 'helping' ? handleHelpingSubmit :
+                      activePopup.type === 'pattern' ? handlePatternSubmit :
+                        activePopup.type === 'spu' ? handleSpuSubmit : handleAbandonSubmit
+                  }
+                  className={`flex-[2] py-2.5 text-white rounded-xl text-sm font-bold shadow-lg transition-all active:scale-[0.98] ${activePopup.type === 'abandon' ? 'bg-red-500 hover:bg-red-600' : 'bg-primary hover:bg-blue-600'}`}
+                >
+                  确认提交
+                </button>
+                <button onClick={resetPopup} className="flex-1 py-2.5 border border-slate-300 rounded-xl text-sm font-bold text-slate-600 hover:bg-slate-50 transition-colors">
+                  取消
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      }
+
+      {/* 回复详情弹窗 */}
+      {replyPopup && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center p-6">
-          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={resetPopup}></div>
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setReplyPopup(null)}></div>
           <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md p-8 animate-in zoom-in-95 max-h-[90vh] overflow-y-auto">
-            <h3 className="text-lg font-bold text-navy-700 mb-2">
-              {activePopup.type === 'helping' ? '改图帮看申请' :
-                activePopup.type === 'pattern' ? '打版帮看申请' :
-                  activePopup.type === 'spu' ? '上传 SPU 信息' : '放弃开发申请'}
-            </h3>
-            {activePopup.type === 'abandon' && <p className="text-[10px] text-red-500 font-bold mb-4 uppercase tracking-tighter">* 此操作不可撤回，款式将退回后端处理</p>}
-            {activePopup.type === 'spu' && <p className="text-[10px] text-amber-500 font-bold mb-4">* 提交后将进入待审版环节</p>}
-
+            <h3 className="text-lg font-bold text-navy-700 mb-4">买手回复详情</h3>
             <div className="space-y-4">
-              {/* 改图/打版帮看：多方案图片上传 */}
-              {(activePopup.type === 'helping' || activePopup.type === 'pattern') && (
-                <>
-                  <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">上传图片 (1-3个方案，每方案1-3张图)</label>
-                  <ImageUploadArea />
-                </>
-              )}
-
-              {/* SPU 或 放弃原因 */}
-              {(activePopup.type === 'spu' || activePopup.type === 'abandon') && (
+              {replyPopup.reply?.image && (
                 <div>
-                  <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">
-                    {activePopup.type === 'spu' ? '填写 SPU 编码 (多个请用空格分割)' : '备注/原因说明'}
-                  </label>
-                  <textarea
-                    className="w-full border-slate-200 rounded-lg text-sm p-3 min-h-[100px] focus:ring-primary"
-                    placeholder={activePopup.type === 'spu' ? 'SPU001 SPU002...' : '请详细填写理由...'}
-                    value={remark}
-                    onChange={(e) => setRemark(e.target.value)}
-                  />
+                  <p className="text-xs font-bold text-slate-500 uppercase mb-2">回复图片</p>
+                  <img src={replyPopup.reply.image} alt="Reply" className="w-full rounded-lg border border-slate-200" />
                 </div>
               )}
+              {replyPopup.reply?.content && (
+                <div>
+                  <p className="text-xs font-bold text-slate-500 uppercase mb-1">回复内容</p>
+                  <p className="text-sm text-slate-700 bg-slate-50 p-3 rounded-lg">{replyPopup.reply.content}</p>
+                </div>
+              )}
+              <div className="text-[10px] text-slate-400 flex justify-between">
+                <span>处理人: {replyPopup.reply?.processor || '未知'}</span>
+                <span>{replyPopup.reply?.time ? new Date(replyPopup.reply.time).toLocaleString('zh-CN') : ''}</span>
+              </div>
             </div>
-            <div className="flex gap-4 mt-8">
-              <button
-                onClick={
-                  activePopup.type === 'helping' ? handleHelpingSubmit :
-                    activePopup.type === 'pattern' ? handlePatternSubmit :
-                      activePopup.type === 'spu' ? handleSpuSubmit : handleAbandonSubmit
-                }
-                className={`flex-[2] py-2.5 text-white rounded-xl text-sm font-bold shadow-lg transition-all active:scale-[0.98] ${activePopup.type === 'abandon' ? 'bg-red-500 hover:bg-red-600' : 'bg-primary hover:bg-blue-600'}`}
-              >
-                确认提交
-              </button>
-              <button onClick={resetPopup} className="flex-1 py-2.5 border border-slate-300 rounded-xl text-sm font-bold text-slate-600 hover:bg-slate-50 transition-colors">
-                取消
-              </button>
-            </div>
+            <button onClick={() => setReplyPopup(null)} className="mt-6 w-full py-2.5 border border-slate-300 rounded-xl text-sm font-bold text-slate-600 hover:bg-slate-50 transition-colors">
+              关闭
+            </button>
           </div>
         </div>
       )}
-    </div>
+
+    </div >
   );
 };
 

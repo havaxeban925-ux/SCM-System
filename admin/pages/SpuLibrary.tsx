@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
 interface SpuItem {
     id: string;
@@ -8,9 +8,9 @@ interface SpuItem {
 }
 
 const SpuLibrary: React.FC = () => {
-    // SPU 数据将来自商家上传，初始为空
+    // SPU 数据来自后端
     const [items, setItems] = useState<SpuItem[]>([]);
-
+    const [loading, setLoading] = useState(false);
     const [showDeleteModal, setShowDeleteModal] = useState(false);
     const [deleteInput, setDeleteInput] = useState('');
     const PAGE_SIZE = 500;
@@ -19,6 +19,32 @@ const SpuLibrary: React.FC = () => {
         const allSpus = items.map(i => i.spus).join(' ');
         navigator.clipboard.writeText(allSpus);
         alert(`已复制全部SPU`);
+    };
+
+    useEffect(() => {
+        fetchSpus();
+    }, []);
+
+    const fetchSpus = async () => {
+        setLoading(true);
+        try {
+            const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+            const res = await fetch(`${API_BASE}/api/spu?pageSize=500`);
+            const json = await res.json();
+
+            // Map backend data to frontend interface
+            const mapped = (json.data || []).map((d: any) => ({
+                id: d.id,
+                image_url: d.image_url,
+                link: d.link,
+                spus: d.spu_code // 后端返回的是 spu_code
+            }));
+
+            setItems(mapped);
+        } catch (err) {
+            console.error(err);
+        }
+        setLoading(false);
     };
 
     const handleCopyRow = (spus: string) => {

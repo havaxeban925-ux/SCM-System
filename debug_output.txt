@@ -1,0 +1,10 @@
+[
+  {
+    "id": "eacca71b-8437-40c7-8b90-38eede8d2b96",
+    "style_demand_id": null,
+    "spu_code": "TEST-INSPECT-1770539084811",
+    "image_url": "http://example.com/test.jpg",
+    "shop_id": null,
+    "created_at": "2026-02-08T08:24:44.813+00:00"
+  }
+]

@@ -1,0 +1,12 @@
+Fetching http://localhost:3001/api/admin/dashboard...
+Status: 200 OK
+Body (JSON): {"stats":{"key_total":4,"shop_total":4,"user_total":4,"spu_total":0,"shop_levels":{"S":0,"A":4,"B":0,"C":0,"N":0},"style_total":4,"style_pending":4,"pricing_total":0,"pricing_pending":0,"anomaly_total":0,"anomaly_pending":0,"restock_total":0,"restock_pending":0},"shop_levels":{"S":0,"A":4,"B":0,"C":0,"N":0}}
+---
+Fetching http://localhost:3001/api/styles/private?pageSize=10...
+Status: 200 OK
+Body (JSON): {"data":[{"id":"bc35315a-276a-4f41-b5bd-d0e36b5d0a1b","push_type":"PRIVATE","shop_id":"5efe3196-77ce-470c-9662-169440d3a484","shop_name":"Unknown","image_url":"data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/2wBDAQkJCQwLDBgNDRgyIRwhMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjL/wAARCAHlAW0DAREAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRB
+---
+Fetching http://localhost:3001/api/admin/shops?pageSize=10...
+Status: 200 OK
+Body (JSON): {"data":[{"id":"19d4fc56-3cff-4137-8db4-9df3f0bf8afb","shop_name":"四季潮流店","phone":"12345678904","role":"FACTORY","created_at":"2026-02-04T16:58:50.500223+00:00","updated_at":"2026-02-04T16:58:50.500223+00:00","key_id":"KEY4","level":"A","shop_code":"SHOP_D"},{"id":"7df7f1ca-e5c2-4cb2-807f-7c21f6b49319","shop_name":"冬季保暖专营","phone":"12345678903","role":"FACTORY","created_at":"2026-02-04T16:58:47.900142+00:00","updated_at":"2026-02-04T16:58:47.900142+00:00","key_id":"KEY3","level":"A","shop_code":
+---

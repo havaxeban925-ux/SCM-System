@@ -12,7 +12,7 @@ router.get('/private', async (req, res) => {
 
     let query = supabase
         .from('b_style_demand')
-        .select('*', { count: 'exact' })
+        .select('*, sys_shop(shop_code)', { count: 'exact' })
         .order('created_at', { ascending: false });
 
     // 支持 status=all 查询全部状态，否则默认只查 locked,new
@@ -29,7 +29,25 @@ router.get('/private', async (req, res) => {
 
     const { data, error, count } = await query.range(offset, offset + pageSize - 1);
     if (error) return res.status(500).json({ error: error.message });
-    res.json({ data: data || [], total: count || 0, page, pageSize });
+
+    // 手动关联查询 shop_code (因为可能缺少外键关联)
+    let enrichedData = data || [];
+    if (data && data.length > 0) {
+        const shopIds = [...new Set(data.map(d => d.shop_id).filter(Boolean))];
+        const { data: shops } = await supabase
+            .from('sys_shop')
+            .select('id, shop_code')
+            .in('id', shopIds);
+
+        const shopMap = new Map(shops?.map(s => [s.id, s.shop_code]) || []);
+
+        enrichedData = data.map(d => ({
+            ...d,
+            sys_shop: { shop_code: shopMap.get(d.shop_id) }
+        }));
+    }
+
+    res.json({ data: enrichedData, total: count || 0, page, pageSize });
 });
 
 // GET /api/styles/quota-stats - 获取当前商铺的名额统计
@@ -47,7 +65,10 @@ router.get('/quota-stats', async (req, res) => {
         .eq('shop_id', shopId)
         .in('status', ['locked', 'developing']);
 
-    if (error) return res.status(500).json({ error: error.message });
+    if (error) {
+        console.error('Error fetching quota stats:', error);
+        return res.status(500).json({ error: error.message });
+    }
 
     res.json({
         current: count || 0,
@@ -162,6 +183,19 @@ router.post('/public/:id/intent', async (req, res) => {
 router.post('/public/:id/confirm', async (req, res) => {
     const { id } = req.params;
     const { publicStyle, shopId, shopName } = req.body;
+
+    if (shopId) {
+        const { data: existing } = await supabase
+            .from('b_style_demand')
+            .select('id')
+            .eq('source_public_id', id)
+            .eq('shop_id', shopId)
+            .single();
+
+        if (existing) {
+            return res.status(400).json({ error: '您已接该款，请勿重复接款' });
+        }
+    }
 
     const newStyle = {
         push_type: 'POOL',

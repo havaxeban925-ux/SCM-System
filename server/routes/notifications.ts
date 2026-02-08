@@ -3,7 +3,67 @@ import { supabase } from '../lib/supabase';
 
 const router = Router();
 
+// ✅ Phase 2: SSE 客户端管理
+interface SSEClient {
+    res: any;
+    shop_name: string;
+    lastHeartbeat: number;
+}
+
+const sseClients = new Map<number, SSEClient>();
+
 // OPT-4: 获取状态变化通知
+
+// ✅ Phase 2: SSE 流端点
+// GET /api/notifications/stream?shop_name=xxx
+router.get('/stream', (req, res) => {
+    const { shop_name } = req.query;
+
+    if (!shop_name) {
+        return res.status(400).json({ error: 'shop_name is required' });
+    }
+
+    // 设置 SSE 响应头
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.flushHeaders();
+
+    // 发送初始连接成功事件
+    res.write(`event: connected\n`);
+    res.write(`data: ${JSON.stringify({ message: 'SSE connection established', shop_name })}\n\n`);
+
+    // 注册客户端
+    const clientId = Date.now() + Math.random();
+    sseClients.set(clientId, {
+        res,
+        shop_name: shop_name as string,
+        lastHeartbeat: Date.now()
+    });
+
+    console.log(`[SSE] Client connected: ${shop_name} (total: ${sseClients.size})`);
+
+    // 心跳保活 (每 30 秒)
+    const heartbeat = setInterval(() => {
+        try {
+            res.write(`: heartbeat\n\n`);
+            const client = sseClients.get(clientId);
+            if (client) client.lastHeartbeat = Date.now();
+        } catch {
+            clearInterval(heartbeat);
+        }
+    }, 30000);
+
+    // 清理
+    req.on('close', () => {
+        clearInterval(heartbeat);
+        sseClients.delete(clientId);
+        console.log(`[SSE] Client disconnected: ${shop_name} (total: ${sseClients.size})`);
+    });
+});
+
+// GET /api/notifications?shop_name=xxx&since=timestamp
 // GET /api/notifications?shop_name=xxx&since=timestamp
 router.get('/', async (req, res) => {
     const { shop_name, since } = req.query;
@@ -68,14 +128,7 @@ router.get('/', async (req, res) => {
     }
 });
 
-// ✅ Phase 2: SSE 客户端管理
-interface SSEClient {
-    res: any;
-    shop_name: string;
-    lastHeartbeat: number;
-}
 
-const sseClients = new Map<number, SSEClient>();
 
 // 清理僵尸连接 (每 2 分钟)
 setInterval(() => {
@@ -88,54 +141,7 @@ setInterval(() => {
     });
 }, 120000);
 
-// ✅ Phase 2: SSE 流端点
-// GET /api/notifications/stream?shop_name=xxx
-router.get('/stream', (req, res) => {
-    const { shop_name } = req.query;
 
-    if (!shop_name) {
-        return res.status(400).json({ error: 'shop_name is required' });
-    }
-
-    // 设置 SSE 响应头
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.flushHeaders();
-
-    // 发送初始连接成功事件
-    res.write(`event: connected\n`);
-    res.write(`data: ${JSON.stringify({ message: 'SSE connection established', shop_name })}\n\n`);
-
-    // 注册客户端
-    const clientId = Date.now() + Math.random();
-    sseClients.set(clientId, {
-        res,
-        shop_name: shop_name as string,
-        lastHeartbeat: Date.now()
-    });
-
-    console.log(`[SSE] Client connected: ${shop_name} (total: ${sseClients.size})`);
-
-    // 心跳保活 (每 30 秒)
-    const heartbeat = setInterval(() => {
-        try {
-            res.write(`: heartbeat\n\n`);
-            const client = sseClients.get(clientId);
-            if (client) client.lastHeartbeat = Date.now();
-        } catch {
-            clearInterval(heartbeat);
-        }
-    }, 30000);
-
-    // 清理
-    req.on('close', () => {
-        clearInterval(heartbeat);
-        sseClients.delete(clientId);
-        console.log(`[SSE] Client disconnected: ${shop_name} (total: ${sseClients.size})`);
-    });
-});
 
 // ✅ Phase 2: 推送通知函数
 export function notifyShop(shopName: string, event: { type: string; title: string; message: string; data?: any }) {
