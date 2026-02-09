@@ -67,12 +67,13 @@ export async function createPriceIncreaseRequest(
 
 // 创建异常申请
 export async function createAnomalyRequest(
+    shopName: string,
     subType: string,
     targetCodes: string[],
     content?: string
 ): Promise<RequestRecord | null> {
     try {
-        return await api.post<RequestRecord>('/api/requests/anomaly', { subType, targetCodes, content });
+        return await api.post<RequestRecord>('/api/requests/anomaly', { shopName, subType, targetCodes, content });
     } catch (error) {
         console.error('Error creating anomaly request:', error);
         return null;
