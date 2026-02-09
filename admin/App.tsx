@@ -40,24 +40,41 @@ const App: React.FC = () => {
     const [isRegistering, setIsRegistering] = useState(false);
     const [registerForm, setRegisterForm] = useState({ username: '', password: '', confirmPassword: '' });
 
-    const handleLogin = () => {
-        const validBuyers = ['阿桃', '阿允', '阿秋', '铃酱'];
-        const avatar = USER_AVATARS[loginForm.username];
+    const handleLogin = async () => {
+        if (!loginForm.username || !loginForm.password) {
+            setLoginError('请输入账号和密码');
+            return;
+        }
 
-        if (!validBuyers.includes(loginForm.username)) {
-            setLoginError('无效的买手账号');
-            return;
+        try {
+            const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+            const res = await fetch(`${API_BASE}/api/auth/login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    username: loginForm.username,
+                    password: loginForm.password
+                })
+            });
+
+            const data = await res.json();
+
+            if (!res.ok) {
+                setLoginError(data.error || '登录失败');
+                return;
+            }
+
+            const username = data.user.username;
+            const avatar = USER_AVATARS[username] || '👤';
+
+            // OPT-1: 保存当前买手身份，用于API请求追溯操作人
+            localStorage.setItem('current_buyer', username);
+            setUser({ name: username, avatar });
+            setLoginError('');
+        } catch (err) {
+            console.error('Login error:', err);
+            setLoginError('登录请求失败，请检查网络');
         }
-        // 密码从环境变量读取
-        const adminPassword = import.meta.env.VITE_ADMIN_PASSWORD || '';
-        if (loginForm.password !== adminPassword) {
-            setLoginError('密码错误');
-            return;
-        }
-        // OPT-1: 保存当前买手身份，用于API请求追溯操作人
-        localStorage.setItem('current_buyer', loginForm.username);
-        setUser({ name: loginForm.username, avatar });
-        setLoginError('');
     };
 
     const handleRegister = async () => {

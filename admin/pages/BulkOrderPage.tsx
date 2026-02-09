@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { api } from '../../lib/api';
 import { getHandlerAlias, getHandlerColor } from '../utils/handlerMapping';
 
@@ -7,7 +7,7 @@ interface BulkOrder {
     shop_name: string;
     skc_codes: string[];
     submit_time: string;
-    status: '待接单' | '待复核' | '生产中' | '待入仓' | '已完成';
+    status: '待接单' | '待复核' | '生产中' | '待入仓' | '已完成' | '已取消' | '已拒绝';
     plan_quantity: number;
     actual_quantity: number;
     wb_number?: string;
@@ -18,11 +18,12 @@ interface BulkOrder {
 
 const BulkOrderPage: React.FC = () => {
     const [orders, setOrders] = useState<BulkOrder[]>([]);
+    const fileInputRef = useRef<HTMLInputElement>(null);
 
     // ✅ Phase 1 优化: 数据刷新函数
     const refreshOrders = async () => {
         try {
-            const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+            const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:3001';
             const res = await fetch(`${API_BASE}/api/admin/restock?pageSize=100`);
             if (!res.ok) throw new Error('Failed to fetch bulk orders');
             const data = await res.json();
@@ -36,8 +37,11 @@ const BulkOrderPage: React.FC = () => {
                     case 'producing': status = '生产中'; break;
                     case 'shipped': status = '待入仓'; break;
                     case 'completed': status = '已完成'; break;
+                    case 'cancelled': status = '已取消'; break;
+                    case 'rejected': status = '已拒绝'; break;
                     default: status = '待接单';
                 }
+
                 return {
                     id: item.id,
                     shop_name: item.shop_name || '未知店铺',
@@ -47,7 +51,7 @@ const BulkOrderPage: React.FC = () => {
                     plan_quantity: item.plan_quantity || 0,
                     actual_quantity: item.actual_quantity ?? item.plan_quantity ?? 0,
                     wb_number: item.wb_number,
-                    remark: item.remark,
+                    remark: item.remark || item.reduction_reason, // Show rejection/reduction reason if remark is empty
                     is_urgent: item.is_urgent || false,
                     handler_name: item.handler_name
                 };
@@ -70,11 +74,26 @@ const BulkOrderPage: React.FC = () => {
 
                 // Group by key_name (or key_id if name is missing)
                 const groups: Record<string, { id: string; shop_name: string }[]> = {};
+
+                // Build lookup map
+                const map: Record<string, { id: string; shop_name: string }> = {};
+
                 data.forEach((shop: any) => {
                     const key = shop.key_name || shop.key_id || 'Unknown';
                     if (!groups[key]) groups[key] = [];
                     groups[key].push({ id: shop.id, shop_name: shop.shop_name });
+
+                    // Map keys: id, shop_name, shop_code (if valid), key_id (if 1-to-1 mostly?)
+                    if (shop.id) map[shop.id.toLowerCase()] = shop;
+                    if (shop.shop_name) map[shop.shop_name.toLowerCase()] = shop;
+                    if (shop.shop_code) map[shop.shop_code.toLowerCase()] = shop;
+                    // Careful with key_id, many shops might have same KEY.
+                    // But if user puts "KEY1", maybe they mean the first shop of KEY1? Or ambiguous.
+                    // Let's not map key_id to a specific shop to avoid ambiguity, 
+                    // unless we want to default to the first one.
                 });
+
+                setAllShopsMap(map);
 
                 setKeyList(Object.entries(groups).map(([key, shops]) => ({
                     key_id: key,
@@ -87,7 +106,7 @@ const BulkOrderPage: React.FC = () => {
         fetchShops();
     }, []);
 
-    const [statusFilter, setStatusFilter] = useState<'all' | '待接单' | '待复核' | '生产中' | '待入仓' | '已完成'>('all');
+    const [statusFilter, setStatusFilter] = useState<'all' | '待接单' | '待复核' | '生产中' | '待入仓' | '已完成' | '已取消' | '已拒绝'>('all');
     const [detailModal, setDetailModal] = useState<{ show: boolean; order: BulkOrder | null }>({ show: false, order: null });
     // 问题1：多KEY多店铺下单状态
     const [showOrderForm, setShowOrderForm] = useState(false);
@@ -99,6 +118,7 @@ const BulkOrderPage: React.FC = () => {
     const [selectedShopId, setSelectedShopId] = useState('');
     // 问题1：订单列表包含店铺ID
     const [orderList, setOrderList] = useState<{ shopId: string; shopName: string; skc: string; qty: number }[]>([]);
+    const [allShopsMap, setAllShopsMap] = useState<Record<string, { id: string; shop_name: string }>>({});
 
     const filteredOrders = orders.filter(o => {
         const statusMatch = statusFilter === 'all' || o.status === statusFilter;
@@ -116,6 +136,8 @@ const BulkOrderPage: React.FC = () => {
             case '生产中': return 'developing';
             case '待入仓': return 'shipping';
             case '已完成': return 'completed';
+            case '已取消': return 'secondary'; // Use gray for cancelled
+            case '已拒绝': return 'danger';
             default: return 'processing';
         }
     };
@@ -176,6 +198,165 @@ const BulkOrderPage: React.FC = () => {
         }
     };
 
+    const handleExportTemplate = () => {
+        const headers = ['店铺ID', 'SKC编码', '计划数量', '备注'];
+        const rows = [[
+            'SHOP_A', // 使用存在的 Shop Code 或店铺名
+            'SKC001',
+            '100',
+            '批量下单示例'
+        ]];
+
+        const csvContent = [
+            headers.join(','),
+            ...rows.map(row => row.join(','))
+        ].join('\n');
+
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = '批量下单模板.csv';
+        link.click();
+    };
+
+    // 辅助函数：尝试解析CSV内容
+    const parseCSVContent = (content: string) => {
+        const lines = content.split(/\r\n|\n|\r/).filter(line => line.trim());
+        if (lines.length < 2) return null;
+
+        // 尝试检测分隔符 (逗号, 分号, Tab)
+        const headerLine = lines[0];
+        let delimiter = ',';
+        if (headerLine.includes('\t')) delimiter = '\t';
+        else if (headerLine.includes(';')) delimiter = ';';
+
+        const headers = headerLine.split(delimiter).map(h => h.trim().replace(/^[\ufeff]/, '')); // 去除BOM
+
+        // 关键列查找（支持中英文）
+        const shopIdIndex = headers.findIndex(h => h.includes('店铺ID') || h.includes('店铺') || h.toLowerCase() === 'shopid');
+        const skcIndex = headers.findIndex(h => h.includes('SKC') || h.toLowerCase() === 'skc');
+        const qtyIndex = headers.findIndex(h => h.includes('数量') || h.includes('计划') || h.toLowerCase() === 'quantity');
+
+        if (shopIdIndex === -1 || skcIndex === -1) return null;
+
+        const items: { shopId: string; shopName: string; skc: string; qty: number }[] = [];
+
+        for (let i = 1; i < lines.length; i++) {
+            const parts = lines[i].split(delimiter).map(p => p.trim());
+            // 允许空行，但如果行有内容则必须包含关键字段
+            if (parts.length <= Math.max(shopIdIndex, skcIndex)) continue;
+
+            const shopIdFromFile = parts[shopIdIndex];
+            const skc = parts[skcIndex];
+            // 数量处理：如果列不存在或为空，默认为100；尝试解析数字
+            let qty = 100;
+            if (qtyIndex !== -1 && parts[qtyIndex]) {
+                const parsed = parseInt(parts[qtyIndex]);
+                if (!isNaN(parsed)) qty = parsed;
+            }
+
+            if (shopIdFromFile && skc) {
+                // 尝试匹配真实店铺ID
+                // 匹配顺序: ID完全匹配 -> ShopCode(如SHOP_A) -> ShopName(如春秋) -> KeyID(如KEY1)
+                // 注意：allShopsMap 的 key 应该是全小写以便模糊匹配，但在构建时处理
+
+                let realShopId = shopIdFromFile;
+                let realShopName = shopIdFromFile;
+
+                // 简单查找（假设 map key 是名为 literal 的）
+                // 更好的方式是在这里遍历 allShopsMap 或构建更健壮的 lookup
+                // 这里我们假设 allShopsMap key 包含 id, shop_code (lower), shop_name (lower), key_id (lower)
+
+                const lookupKey = shopIdFromFile.trim().toLowerCase();
+                if (allShopsMap[lookupKey]) {
+                    realShopId = allShopsMap[lookupKey].id;
+                    realShopName = allShopsMap[lookupKey].shop_name;
+                }
+
+                items.push({
+                    shopId: realShopId,
+                    shopName: realShopName,
+                    skc: skc,
+                    qty: qty
+                });
+            }
+        }
+        return items;
+    };
+
+    const handleImportExcel = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        try {
+            const buffer = await file.arrayBuffer();
+
+            // 策略1: 尝试 UTF-8
+            let text = new TextDecoder('utf-8').decode(buffer);
+            let result = parseCSVContent(text);
+
+            // 策略2: 如果 UTF-8 解析失败（没找到表头），尝试 GBK
+            if (!result) {
+                console.log('UTF-8 parsing failed, trying GBK...');
+                try {
+                    text = new TextDecoder('gbk').decode(buffer);
+                    result = parseCSVContent(text);
+                } catch (e) {
+                    console.warn('GBK decoding not supported or failed', e);
+                }
+            }
+
+            // 策略3: 如果还不行，尝试 GB18030
+            if (!result) {
+                console.log('GBK parsing failed, trying GB18030...');
+                try {
+                    text = new TextDecoder('gb18030').decode(buffer);
+                    result = parseCSVContent(text);
+                } catch (e) {
+                    console.warn('GB18030 decoding not supported or failed', e);
+                }
+            }
+
+            if (!result) {
+                alert('模板格式错误或编码不支持。\n请确保包含“店铺ID”和“SKC编码”列。\n支持 UTF-8 和 GBK 编码。');
+                e.target.value = '';
+                return;
+            }
+
+            if (result.length === 0) {
+                alert('未能解析到有效数据，请检查文件内容');
+                e.target.value = '';
+                return;
+            }
+
+            // 检查是否有未匹配的店铺 (非 UUID 格式)
+            const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+            const invalidShops = result.filter(r => !uuidRegex.test(r.shopId));
+
+            if (invalidShops.length > 0) {
+                const msg = `无法识别以下店铺（请填写准确的店铺名、ShopCode 或 UUID）：\n` +
+                    invalidShops.map(r => `${r.shopName}`).slice(0, 5).join(', ') +
+                    (invalidShops.length > 5 ? '...等' : '');
+                alert(msg);
+                // 也可以选择过滤掉，或者让用户修改
+                // 这里我们过滤掉无效的，避免提交报错
+                result = result.filter(r => uuidRegex.test(r.shopId));
+                if (result.length === 0) {
+                    e.target.value = '';
+                    return;
+                }
+            }
+
+            setOrderList(prev => [...prev, ...result!]);
+            alert(`成功导入 ${result.length} 条数据`);
+
+        } catch (err) {
+            console.error('Import error:', err);
+            alert('导入失败，文件读取错误');
+        }
+        e.target.value = '';
+    };
+
 
     return (
         <div className="order-page">
@@ -203,6 +384,8 @@ const BulkOrderPage: React.FC = () => {
                             <button className={`tab ${statusFilter === '生产中' ? 'active' : ''}`} onClick={() => setStatusFilter('生产中')}>生产中</button>
                             <button className={`tab ${statusFilter === '待入仓' ? 'active' : ''}`} onClick={() => setStatusFilter('待入仓')}>待入仓</button>
                             <button className={`tab ${statusFilter === '已完成' ? 'active' : ''}`} onClick={() => setStatusFilter('已完成')}>已完成</button>
+                            <button className={`tab ${statusFilter === '已取消' ? 'active' : ''}`} onClick={() => setStatusFilter('已取消')}>已取消</button>
+                            <button className={`tab ${statusFilter === '已拒绝' ? 'active' : ''}`} onClick={() => setStatusFilter('已拒绝')}>已拒绝</button>
                         </div>
                     </div>
                 </div>
@@ -243,7 +426,7 @@ const BulkOrderPage: React.FC = () => {
                                 <td style={{ fontWeight: 600 }}>{order.plan_quantity}</td>
                                 <td style={{ fontWeight: 600, color: order.actual_quantity < order.plan_quantity ? 'var(--danger)' : 'inherit' }}>
                                     {order.actual_quantity}
-                                    {order.actual_quantity < order.plan_quantity && <span style={{ fontSize: 10, marginLeft: 4 }}>(砖量)</span>}
+                                    {order.actual_quantity < order.plan_quantity && <span style={{ fontSize: 10, marginLeft: 4 }}>(砍量)</span>}
                                 </td>
                                 <td style={{ fontSize: 12, color: 'var(--text-muted)' }}>{order.submit_time}</td>
                                 <td>{order.wb_number || '-'}</td>
@@ -364,7 +547,7 @@ const BulkOrderPage: React.FC = () => {
                                         <label>实际数量</label>
                                         <span style={{ color: detailModal.order.actual_quantity < detailModal.order.plan_quantity ? 'var(--danger)' : 'inherit' }}>
                                             {detailModal.order.actual_quantity}
-                                            {detailModal.order.actual_quantity < detailModal.order.plan_quantity && ' (砖量)'}
+                                            {detailModal.order.actual_quantity < detailModal.order.plan_quantity && ' (砍量)'}
                                         </span>
                                     </div>
                                     {detailModal.order.wb_number && (
@@ -409,7 +592,7 @@ const BulkOrderPage: React.FC = () => {
                                             setDetailModal({ show: false, order: null });
                                             await refreshOrders();
                                         }}>
-                                            确认砖量
+                                            确认砍量
                                         </button>
                                         <button className="btn btn-danger" onClick={async () => {
                                             await api.post(`/api/restock/${detailModal.order!.id}/cancel-confirm`);
@@ -479,7 +662,7 @@ const BulkOrderPage: React.FC = () => {
                                         </select>
                                     </div>
                                 )}
-                                <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+                                <div style={{ display: 'flex', gap: 8, marginBottom: 16, alignItems: 'flex-end' }}>
                                     <div style={{ flex: 2 }}>
                                         <label style={{ display: 'block', fontSize: 12, marginBottom: 6 }}>SKC</label>
                                         <input
@@ -502,9 +685,18 @@ const BulkOrderPage: React.FC = () => {
                                             style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--border-color)', borderRadius: 6 }}
                                         />
                                     </div>
-                                    <div style={{ display: 'flex', alignItems: 'flex-end' }}>
-                                        <button className="btn btn-primary" onClick={handleAddOrder}>添加</button>
-                                    </div>
+                                </div>
+                                <div style={{ display: 'flex', gap: 8, marginTop: 8, marginBottom: 12 }}>
+                                    <button className="btn btn-primary" onClick={handleAddOrder}>
+                                        <span className="material-symbols-outlined" style={{ fontSize: 16, marginRight: 4 }}>add</span>添加
+                                    </button>
+                                    <button className="btn btn-outline" onClick={handleExportTemplate}>
+                                        <span className="material-symbols-outlined" style={{ fontSize: 16, marginRight: 4 }}>download</span>下载模板
+                                    </button>
+                                    <button className="btn btn-outline" onClick={() => fileInputRef.current?.click()}>
+                                        <span className="material-symbols-outlined" style={{ fontSize: 16, marginRight: 4 }}>upload</span>批量导入
+                                    </button>
+                                    <input type="file" ref={fileInputRef} hidden accept=".csv,.txt" onChange={handleImportExcel} />
                                 </div>
                                 {orderList.length > 0 && (
                                     <div style={{ maxHeight: 200, overflowY: 'auto', border: '1px solid var(--border-color)', borderRadius: 6 }}>

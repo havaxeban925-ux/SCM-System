@@ -56,7 +56,7 @@ router.post('/:id/confirm', async (req, res) => {
     }
 
     const actualQty = order.actual_quantity ?? order.plan_quantity;
-    const newStatus = actualQty < order.plan_quantity ? '待买手复核' : '生产中';
+    const newStatus = actualQty < order.plan_quantity ? 'reviewing' : 'producing';
 
     const { error } = await supabase
         .from('b_restock_order')
@@ -76,7 +76,7 @@ router.post('/:id/review', async (req, res) => {
     const { id } = req.params;
     const { agree } = req.body;
 
-    const newStatus = agree ? '生产中' : '已取消';
+    const newStatus = agree ? 'producing' : 'cancelled';
 
     const { error } = await supabase
         .from('b_restock_order')
@@ -122,7 +122,7 @@ router.post('/:id/ship', async (req, res) => {
     const { error } = await supabase
         .from('b_restock_order')
         .update({
-            status: '待买手确认入仓',
+            status: 'shipped',
             updated_at: new Date().toISOString()
         })
         .eq('id', id);
@@ -170,7 +170,7 @@ router.post('/:id/arrival', async (req, res) => {
     const { error } = await supabase
         .from('b_restock_order')
         .update({
-            status: isCompleted ? '已确认入仓' : '待买手确认入仓',
+            status: isCompleted ? 'completed' : 'shipped',
             arrived_quantity: newArrivedQty,
             updated_at: new Date().toISOString()
         })
@@ -202,7 +202,7 @@ router.post('/:id/reject', async (req, res) => {
     const { error } = await supabase
         .from('b_restock_order')
         .update({
-            status: 'reviewing', // 待买手复核确认取消
+            status: 'rejected', // 商家拒绝接单
             reduction_reason: reason || '商家拒绝接单',
             updated_at: new Date().toISOString()
         })
@@ -229,5 +229,66 @@ router.post('/:id/cancel-confirm', async (req, res) => {
     if (error) return res.status(500).json({ error: error.message });
     res.json({ success: true });
 });
+
+// POST /api/restock/batch - 批量创建大货订单
+router.post('/batch', async (req, res) => {
+    const { orders } = req.body;
+
+    if (!orders || !Array.isArray(orders) || orders.length === 0) {
+        return res.status(400).json({ error: '请提供有效的订单数据' });
+    }
+
+    try {
+        const toInsert = [];
+
+        // Loop through orders and prepare insert data
+        for (const o of orders) {
+            const orderNo = await generateOrderNo('R');
+            toInsert.push({
+                shop_id: o.shopId,
+                skc_code: o.skcCode,
+                plan_quantity: o.planQuantity || 0,
+                actual_quantity: o.planQuantity || 0, // Default to plan qty
+                status: 'pending',
+                remark: o.remark || '',
+                order_no: orderNo,
+                is_urgent: false,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString()
+            });
+
+            // Small delay to ensure orderNo randomness/time difference if sensitive (optional)
+            // await new Promise(r => setTimeout(r, 10)); 
+        }
+
+        const { data, error } = await supabase
+            .from('b_restock_order')
+            .insert(toInsert)
+            .select();
+
+        if (error) {
+            console.error('Batch insert error:', error);
+            return res.status(500).json({ error: error.message });
+        }
+
+        res.json({
+            success: true,
+            data: data,
+            message: `成功创建 ${toInsert.length} 个大货订单`
+        });
+    } catch (err: any) {
+        console.error('批量创建大货订单失败:', err);
+        res.status(500).json({ error: err.message || '创建失败' });
+    }
+});
+
+function generateOrderNo(prefix: string): Promise<string> {
+    return new Promise((resolve) => {
+        const date = new Date();
+        const dateStr = `${date.getFullYear()}${(date.getMonth() + 1).toString().padStart(2, '0')}${date.getDate().toString().padStart(2, '0')}`;
+        const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
+        resolve(`${prefix}${dateStr}${random}`);
+    });
+}
 
 export default router;
