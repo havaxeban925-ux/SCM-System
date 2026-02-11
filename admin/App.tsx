@@ -29,6 +29,11 @@ const USER_AVATARS: Record<string, string> = {
 };
 
 const App: React.FC = () => {
+    // VERSION CHECK LOG
+    useEffect(() => {
+        console.log('%c SCM Admin v3.1.0 - Debug Mode Enabled ', 'background: #222; color: #bada55; font-size: 16px; padding: 4px;');
+    }, []);
+
     const [user, setUser] = useState<User | null>(null);
     const [loginForm, setLoginForm] = useState({ username: '', password: '' });
     const [loginError, setLoginError] = useState('');
@@ -224,6 +229,26 @@ const App: React.FC = () => {
 
                     <div style={{ marginTop: 20, fontSize: 12, color: 'var(--text-muted)', textAlign: 'center' }}>
                         可用账号：阿桃 / 阿允 / 铃酱 / 阿秋
+                    </div>
+                    <div style={{ marginTop: 20, fontSize: 12, color: 'var(--text-muted)', textAlign: 'center' }}>
+                        可用账号：阿桃 / 阿允 / 铃酱 / 阿秋
+                    </div>
+
+                    {/* 调试模式快捷入口 */}
+                    <div style={{ marginTop: 20, paddingTop: 20, borderTop: '1px dashed #eee' }}>
+                        <button
+                            className="btn btn-outline"
+                            style={{ width: '100%', padding: '8px', fontSize: 12, color: '#666', borderColor: '#ddd' }}
+                            onClick={() => {
+                                const username = '秋测试';
+                                const avatar = USER_AVATARS[username] || '🍂';
+                                localStorage.setItem('current_buyer', username);
+                                setUser({ name: username, avatar });
+                            }}
+                        >
+                            <span className="material-symbols-outlined" style={{ fontSize: 14, verticalAlign: -2, marginRight: 4 }}>bug_report</span>
+                            进入调试模式 (默认: 秋测试)
+                        </button>
                     </div>
                 </div>
             </div>

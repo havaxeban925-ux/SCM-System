@@ -214,12 +214,30 @@ const LoginView: React.FC<{ onLogin: (user: any) => void }> = ({ onLogin }) => {
                 申请注册
               </button>
             </form>
+            </form>
           )}
 
-          <p className="text-center text-xs text-slate-400 mt-6">© 2024 SCM System. All Rights Reserved.</p>
+        {/* 调试模式快捷入口 */}
+        <div className="mt-6 pt-6 border-t border-slate-100">
+          <button
+            type="button"
+            onClick={() => onLogin({
+              username: '12345678901',
+              shop_name: '春秋女装旗舰店',
+              status: 'approved',
+              id: 'mock-user-id'
+            })}
+            className="w-full h-10 border-2 border-dashed border-slate-300 text-slate-500 rounded-lg text-xs font-bold hover:border-primary hover:text-primary hover:bg-primary/5 transition-all flex items-center justify-center gap-2"
+          >
+            <span className="material-symbols-outlined text-base">bug_report</span>
+            进入调试模式 (默认: 12345678901)
+          </button>
         </div>
+
+        <p className="text-center text-xs text-slate-400 mt-6">© 2024 SCM System. All Rights Reserved.</p>
       </div>
     </div>
+    </div >
   );
 };
 
@@ -232,6 +250,11 @@ interface Shop {
 }
 
 const App: React.FC = () => {
+  // VERSION CHECK LOG
+  useEffect(() => {
+    console.log('%c SCM System v3.1.0 - Debug Mode Enabled ', 'background: #222; color: #bada55; font-size: 16px; padding: 4px;');
+  }, []);
+
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [myShops, setMyShops] = useState<Shop[]>([]);
   const [currentShopId, setCurrentShopId] = useState<string | undefined>(undefined);
