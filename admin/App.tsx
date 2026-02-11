@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import StyleManage from './pages/StyleManage';
 import ShopManage from './pages/ShopManage';
 import PushManage from './pages/PushManage';
