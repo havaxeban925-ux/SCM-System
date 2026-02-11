@@ -3,6 +3,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { RequestRecord, PricingDetail } from '../types';
 import { getRequestRecords, submitSecondaryReview } from '../services/requestService';
 import { RequestRecord as DBRequestRecord } from '../lib/supabase';
+import { API_BASE } from '../lib/api';
 
 interface Props {
   onNewRequest: () => void;
@@ -164,7 +165,7 @@ const RequestWorkbench: React.FC<Props> = ({ onNewRequest }) => {
   const handleMerchantConfirm = async () => {
     if (!confirmModal.record) return;
 
-    const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:3001';
+    // const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:3001';
 
     try {
       const res = await fetch(`${API_BASE}/api/requests/${confirmModal.record.id}/merchant-confirm`, {

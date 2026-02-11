@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { updateRequestUrgentStatus } from '../../services/requestService';
 import { getHandlerAlias, getHandlerColor } from '../utils/handlerMapping';
+import { API_BASE } from '../lib/api';
 
 interface AnomalyOrder {
     id: string;
@@ -28,7 +29,7 @@ const AnomalyOrderPage: React.FC = () => {
     useEffect(() => {
         const fetchOrders = async () => {
             try {
-                const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:3001';
+                // const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:3001';
                 const res = await fetch(`${API_BASE}/api/requests?type=anomaly&pageSize=100`);
                 if (!res.ok) throw new Error('Failed to fetch anomaly orders');
                 const data = await res.json();

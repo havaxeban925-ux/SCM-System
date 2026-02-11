@@ -9,6 +9,7 @@ import DevelopmentProgress from './pages/DevelopmentProgress';
 import QuotationDrawer from './components/QuotationDrawer';
 import { PRIVATE_STYLES, MOCK_DEVELOPMENT_STYLES } from './constants';
 import ErrorBoundary from './components/ErrorBoundary';
+import { API_BASE } from './lib/api';
 
 // 模拟消息
 const MOCK_MESSAGES = [
@@ -34,7 +35,7 @@ const LoginView: React.FC<{ onLogin: (user: any) => void }> = ({ onLogin }) => {
     }
 
     try {
-      const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+      // const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
       const res = await fetch(`${API_BASE}/api/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -66,7 +67,7 @@ const LoginView: React.FC<{ onLogin: (user: any) => void }> = ({ onLogin }) => {
     }
 
     try {
-      const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+      // const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
       const res = await fetch(`${API_BASE}/api/auth/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -260,7 +261,7 @@ const App: React.FC = () => {
     // Here we assume mapping by shop_name for simplicity as per user intent
     if (user.shop_name) {
       try {
-        const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+        // const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
         const res = await fetch(`${API_BASE}/api/admin/shops?search=${encodeURIComponent(user.shop_name)}`);
         if (res.ok) {
           const json = await res.json();
@@ -280,7 +281,7 @@ const App: React.FC = () => {
   useEffect(() => {
     if (!currentUser || currentUser.status !== 'approved') return;
 
-    const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+    // const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
     const shopName = currentUser.shop_name || '';
 
     let eventSource: EventSource | null = null;

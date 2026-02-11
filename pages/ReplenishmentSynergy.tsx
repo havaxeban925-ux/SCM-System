@@ -5,6 +5,7 @@ import { saveAs } from 'file-saver';
 import { ReplenishmentItem } from '../types';
 import { getRestockOrders, updateQuantity, confirmOrder, shipOrder, confirmArrival } from '../services/restockService';
 import { RestockOrder } from '../lib/supabase';
+import { API_BASE } from '../lib/api';
 
 // 转换数据库格式到前端格式
 
@@ -331,7 +332,7 @@ const ReplenishmentSynergy: React.FC = () => {
                             onClick={async () => {
                               const reason = prompt('请输入拒绝理由：');
                               if (reason !== null) {
-                                const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:3001';
+                                // const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:3001';
                                 const res = await fetch(`${API_BASE}/api/restock/${item._dbId}/reject`, {
                                   method: 'POST',
                                   headers: { 'Content-Type': 'application/json' },

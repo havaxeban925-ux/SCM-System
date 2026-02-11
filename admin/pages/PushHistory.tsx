@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { API_BASE } from '../lib/api';
 import { getHandlerAlias, getHandlerColor } from '../utils/handlerMapping';
 
 interface PushRecord {
@@ -59,7 +60,7 @@ const PushHistory: React.FC = () => {
     useEffect(() => {
         const fetchData = async () => {
             try {
-                const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:3001';
+                // const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:3001';
 
                 // Fetch shops for the "Add Private Push" modal filters
                 const shopsRes = await fetch(`${API_BASE}/api/admin/shops?pageSize=1000`);
@@ -136,7 +137,7 @@ const PushHistory: React.FC = () => {
         if (!detailModal.record) return;
 
         try {
-            const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:3001';
+            // const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:3001';
             const res = await fetch(`${API_BASE}/api/admin/push/private`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -174,7 +175,7 @@ const PushHistory: React.FC = () => {
         if (!confirm('确定将此款式推入公池？')) return;
 
         try {
-            const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:3001';
+            // const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:3001';
             const res = await fetch(`${API_BASE}/api/admin/push/transfer/public`, {
                 method: 'POST',
                 headers: {

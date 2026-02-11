@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { api } from '../../lib/api';
+import { api, API_BASE } from '../../lib/api';
 import { getHandlerAlias, getHandlerColor } from '../utils/handlerMapping';
 
 interface BulkOrder {
@@ -22,7 +22,7 @@ const BulkOrderPage: React.FC = () => {
     // ✅ Phase 1 优化: 数据刷新函数
     const refreshOrders = async () => {
         try {
-            const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:3001';
+            // const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:3001';
             const res = await fetch(`${API_BASE}/api/admin/restock?pageSize=100`);
             if (!res.ok) throw new Error('Failed to fetch bulk orders');
             const data = await res.json();

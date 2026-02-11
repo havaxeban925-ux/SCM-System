@@ -1,0 +1,94 @@
+{
+  "shops": [
+    {
+      "id": "2ce9c413-5a16-4e0b-af40-525da031413f",
+      "shop_name": "春秋女装旗舰店",
+      "phone": "12345678901",
+      "role": "FACTORY",
+      "created_at": "2026-02-09T03:26:29.887112+00:00",
+      "updated_at": "2026-02-09T03:26:29.887112+00:00",
+      "key_id": "KEY1",
+      "level": "A",
+      "shop_code": "SHOP_A"
+    },
+    {
+      "id": "9e21b0f3-a58f-4bd3-9f37-e717c3640e9a",
+      "shop_name": "夏日时尚馆",
+      "phone": "12345678902",
+      "role": "FACTORY",
+      "created_at": "2026-02-09T03:26:34.603623+00:00",
+      "updated_at": "2026-02-09T03:26:34.603623+00:00",
+      "key_id": "KEY2",
+      "level": "A",
+      "shop_code": "SHOP_B"
+    },
+    {
+      "id": "c1942599-85cf-4881-9e4f-cb994f301caa",
+      "shop_name": "冬季保暖专营",
+      "phone": "12345678903",
+      "role": "FACTORY",
+      "created_at": "2026-02-09T03:26:36.823361+00:00",
+      "updated_at": "2026-02-09T03:26:36.823361+00:00",
+      "key_id": "KEY3",
+      "level": "A",
+      "shop_code": "SHOP_C"
+    },
+    {
+      "id": "382ee552-d2ee-408f-9911-3610381e189d",
+      "shop_name": "四季潮流店",
+      "phone": "12345678904",
+      "role": "FACTORY",
+      "created_at": "2026-02-09T03:26:39.162098+00:00",
+      "updated_at": "2026-02-09T03:26:39.162098+00:00",
+      "key_id": "KEY4",
+      "level": "A",
+      "shop_code": "SHOP_D"
+    }
+  ],
+  "users": [
+    {
+      "id": "0555ac0e-dc54-4a19-8424-29d9e10a661a",
+      "username": "秋测试",
+      "password": "123456",
+      "role": "buyer",
+      "shop_name": null,
+      "status": "approved",
+      "reject_reason": null,
+      "created_at": "2026-02-09T07:58:41.425+00:00",
+      "updated_at": "2026-02-09T07:58:41.427+00:00"
+    },
+    {
+      "id": "9665b51d-a137-4eb0-b3e4-cea4e7921450",
+      "username": "ceshimiziqiu",
+      "password": "baozhulingjiang",
+      "role": "admin",
+      "shop_name": "示例官方旗舰店",
+      "status": "approved",
+      "reject_reason": null,
+      "created_at": "2026-02-02T07:11:31.950348+00:00",
+      "updated_at": "2026-02-02T07:11:31.950348+00:00"
+    },
+    {
+      "id": "aa284b9c-0db6-409d-9fee-0840d18e8c88",
+      "username": "admin",
+      "password": "baozhulingjiang",
+      "role": "admin",
+      "shop_name": null,
+      "status": "approved",
+      "reject_reason": null,
+      "created_at": "2026-02-02T07:11:33.310638+00:00",
+      "updated_at": "2026-02-02T07:11:33.310638+00:00"
+    },
+    {
+      "id": "110268cd-e423-47c0-8461-8c7fb7f2b922",
+      "username": "hhh",
+      "password": "123",
+      "role": "admin",
+      "shop_name": null,
+      "status": "approved",
+      "reject_reason": null,
+      "created_at": "2026-02-02T07:11:33.797759+00:00",
+      "updated_at": "2026-02-02T07:11:33.797759+00:00"
+    }
+  ]
+}

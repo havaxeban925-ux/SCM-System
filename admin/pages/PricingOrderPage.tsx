@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
 import { getHandlerAlias, getHandlerColor } from '../utils/handlerMapping';
+import { API_BASE } from '../lib/api';
 // import { updateRequestUrgentStatus } from '../../services/requestService'; // Unused
 
 interface PricingOrder {
@@ -27,7 +28,7 @@ const PricingOrderPage: React.FC = () => {
     // ✅ Phase 1 优化: 数据刷新函数
     const refreshOrders = async () => {
         try {
-            const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:3001';
+            // const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:3001';
             const res = await fetch(`${API_BASE}/api/requests?type=pricing&pageSize=100`);
             if (!res.ok) throw new Error('Failed to fetch pricing orders');
             const data = await res.json();
@@ -73,7 +74,7 @@ const PricingOrderPage: React.FC = () => {
     const [detailModal, setDetailModal] = useState<{ show: boolean; order: PricingOrder | null }>({ show: false, order: null });
     const [reviewModal, setReviewModal] = useState<{ show: boolean; order: PricingOrder | null; type: 'initial' | 'force' }>({ show: false, order: null, type: 'initial' });
     const [reviewPrice, setReviewPrice] = useState('');
-    const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+    // const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
 
     const filteredOrders = orders.filter(o => {
         const statusMatch = statusFilter === 'all' || o.status === statusFilter;

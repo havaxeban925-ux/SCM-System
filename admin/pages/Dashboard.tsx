@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { API_BASE } from '../lib/api';
 
 interface DashboardStats {
     keyCount: number;
@@ -53,7 +54,7 @@ const Dashboard: React.FC = () => {
     useEffect(() => {
         const fetchDashboardData = async () => {
             try {
-                const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:3001';
+                // const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:3001';
 
                 // 并行获取所有数据
                 const [dashboardRes, privateRes, publicRes] = await Promise.all([

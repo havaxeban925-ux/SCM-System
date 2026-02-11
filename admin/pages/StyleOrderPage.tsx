@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { getHandlerAlias, getHandlerColor } from '../utils/handlerMapping';
 import ImageUpload from '../components/ImageUpload';
+import { API_BASE } from '../lib/api';
 
 interface StyleOrder {
     id: string;
@@ -29,7 +30,7 @@ const StyleOrderPage: React.FC = () => {
     useEffect(() => {
         const fetchOrders = async () => {
             try {
-                const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:3001';
+                // const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:3001';
                 // Delay slightly to show loading state (optional, for better UX perception)
                 // await new Promise(r => setTimeout(r, 300));
 
@@ -126,7 +127,7 @@ const StyleOrderPage: React.FC = () => {
         }
 
         try {
-            const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:3001';
+            // const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:3001';
             let url = `${API_BASE}/api/admin/styles/${detailModal.order.id}/reply`;
 
             // 如果是来自 request (改图/打版帮看) 的工单，调用新的回复接口
@@ -164,7 +165,7 @@ const StyleOrderPage: React.FC = () => {
     const handleSubmitRemark = async () => {
         if (!detailModal.order) return;
         try {
-            const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:3001';
+            // const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:3001';
             const res = await fetch(`${API_BASE}/api/requests/${detailModal.order.id}`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
@@ -184,7 +185,7 @@ const StyleOrderPage: React.FC = () => {
     // 问题12修复：处理工单时调用API更新状态
     const handleProcess = async (id: string) => {
         try {
-            const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:3001';
+            // const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:3001';
             // Delay slightly to show loading state (optional, for better UX perception)
             // await new Promise(r => setTimeout(r, 300));
             const res = await fetch(`${API_BASE}/api/admin/styles/${id}/confirm`, {
@@ -473,7 +474,7 @@ const StyleOrderPage: React.FC = () => {
                                     <button className="btn btn-success" onClick={async () => {
                                         if (!confirm('确认已处理该请求？')) return;
                                         try {
-                                            const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:3001';
+                                            // const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:3001';
                                             await fetch(`${API_BASE}/api/requests/${detailModal.order!.id}/status`, {
                                                 method: 'PATCH',
                                                 headers: { 'Content-Type': 'application/json' },
@@ -489,7 +490,7 @@ const StyleOrderPage: React.FC = () => {
                                     <button className="btn btn-danger" onClick={async () => {
                                         if (!confirm('确认驳回该请求？')) return;
                                         try {
-                                            const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:3001';
+                                            // const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:3001';
                                             await fetch(`${API_BASE}/api/requests/${detailModal.order!.id}/audit`, {
                                                 method: 'POST',
                                                 headers: { 'Content-Type': 'application/json' },

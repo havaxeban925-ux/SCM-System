@@ -10,6 +10,7 @@ import StyleOrderPage from './pages/StyleOrderPage';
 import PricingOrderPage from './pages/PricingOrderPage';
 import AnomalyOrderPage from './pages/AnomalyOrderPage';
 import BulkOrderPage from './pages/BulkOrderPage';
+import { API_BASE } from '../lib/api';
 
 type View = 'dashboard' | 'push' | 'tags' | 'spu' | 'history' | 'requests' | 'shops' | 'styles' | 'style_order' | 'pricing_order' | 'anomaly_order' | 'bulk_order';
 
@@ -47,7 +48,7 @@ const App: React.FC = () => {
         }
 
         try {
-            const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+            // const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
             const res = await fetch(`${API_BASE}/api/auth/login`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -88,7 +89,7 @@ const App: React.FC = () => {
         }
 
         try {
-            const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+            // const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
             const res = await fetch(`${API_BASE}/api/auth/register`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },

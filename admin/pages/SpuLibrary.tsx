@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { API_BASE } from '../lib/api';
 
 interface SpuItem {
     id: string;
@@ -28,7 +29,7 @@ const SpuLibrary: React.FC = () => {
     const fetchSpus = async () => {
         setLoading(true);
         try {
-            const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:3001';
+            // const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:3001';
             const res = await fetch(`${API_BASE}/api/spu?pageSize=500`);
             const json = await res.json();
 

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { API_BASE } from '../lib/api';
 
 interface Shop {
     id: string;
@@ -93,13 +94,13 @@ const ShopManage: React.FC = () => {
     const loadAllShops = async () => {
         setLoading(true);
         try {
-            const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+            // const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
             let allFetched: Shop[] = [];
             let page = 1;
             const pageSize = 1000;
 
             while (true) {
-                const url = new URL(`${baseUrl}/api/admin/shops`);
+                const url = new URL(`${API_BASE}/api/admin/shops`);
                 url.searchParams.set('page', page.toString());
                 url.searchParams.set('pageSize', pageSize.toString());
 
@@ -149,8 +150,8 @@ const ShopManage: React.FC = () => {
     const loadPendingRegistrations = async () => {
         setPendingLoading(true);
         try {
-            const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
-            const res = await fetch(`${baseUrl}/api/auth/pending`);
+            // const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+            const res = await fetch(`${API_BASE}/api/auth/pending`);
             if (!res.ok) throw new Error(`Fetch failed: ${res.status}`);
             const json = await res.json();
             setPendingRegistrations(json.data || []);
@@ -233,8 +234,8 @@ const ShopManage: React.FC = () => {
         }
 
         try {
-            const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
-            const res = await fetch(`${baseUrl}/api/auth/approve`, {
+            // const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+            const res = await fetch(`${API_BASE}/api/auth/approve`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -264,8 +265,8 @@ const ShopManage: React.FC = () => {
         if (!reason) return;
 
         try {
-            const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
-            const res = await fetch(`${baseUrl}/api/auth/reject`, {
+            // const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+            const res = await fetch(`${API_BASE}/api/auth/reject`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ userId: id, reason })
@@ -317,7 +318,7 @@ const ShopManage: React.FC = () => {
                     return;
                 }
 
-                const res = await fetch(`${import.meta.env.VITE_API_BASE_URL}/api/admin/shops`, {
+                const res = await fetch(`${API_BASE}/api/admin/shops`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -376,8 +377,8 @@ const ShopManage: React.FC = () => {
         if (!shopToDelete) return;
 
         try {
-            const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
-            const res = await fetch(`${baseUrl}/api/admin/shops/${shopToDelete.id}`, {
+            // const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+            const res = await fetch(`${API_BASE}/api/admin/shops/${shopToDelete.id}`, {
                 method: 'DELETE'
             });
 
@@ -418,7 +419,7 @@ const ShopManage: React.FC = () => {
         if (!confirmed) return;
 
         try {
-            const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+            // const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
             // 使用第一个店铺的ID来代表这个KEY组
             const shopId = selectedGroup.shops[0]?.id;
             if (!shopId) {
@@ -426,7 +427,7 @@ const ShopManage: React.FC = () => {
                 return;
             }
 
-            const res = await fetch(`${baseUrl}/api/admin/shops/${shopId}/key`, {
+            const res = await fetch(`${API_BASE}/api/admin/shops/${shopId}/key`, {
                 method: 'DELETE'
             });
 
@@ -462,8 +463,8 @@ const ShopManage: React.FC = () => {
         }
 
         try {
-            const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
-            const res = await fetch(`${baseUrl}/api/admin/shops`, {
+            // const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+            const res = await fetch(`${API_BASE}/api/admin/shops`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({

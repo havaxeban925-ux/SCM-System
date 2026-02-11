@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { createQuoteRequest, createSamePriceRequest, createPriceIncreaseRequest, createAnomalyRequest } from '../services/requestService';
+import { API_BASE } from '../lib/api';
 import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
 
@@ -180,7 +181,7 @@ const RequestDrawer: React.FC<Props> = ({ onClose }) => {
   const [previewMode, setPreviewMode] = useState(false);
   const [quoteList, setQuoteList] = useState<any[]>([]);
   const [toast, setToast] = useState<{ show: boolean; type: 'success' | 'error'; message: string }>({ show: false, type: 'success', message: '' });
-  const API_BASE = (typeof window !== 'undefined' && (import.meta as any).env?.VITE_API_BASE_URL) || 'http://localhost:3001';
+  // const API_BASE = (typeof window !== 'undefined' && (import.meta as any).env?.VITE_API_BASE_URL) || 'http://localhost:3001';
 
   // 款式申请状态
   const [styleApplicationList, setStyleApplicationList] = useState<any[]>([]);
