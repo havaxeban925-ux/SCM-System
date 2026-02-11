@@ -1,7 +1,7 @@
 // Development: http://127.0.0.1:3001
 // Production (Vercel): Use relative path '' to proxy to /api
-const isDev = import.meta.env.DEV;
-const API_BASE = isDev ? (import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:3001') : '';
+const isLocal = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+const API_BASE = isLocal ? (import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:3001') : '';
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
     // OPT-1: 获取当前买手身份，用于操作追溯
