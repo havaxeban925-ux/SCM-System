@@ -75,62 +75,39 @@ router.post('/:id/helping', async (req, res) => {
     const { schemes, remark } = req.body;
 
     // Check current status
-    const { data: current } = await supabase.from('b_style_demand').select('development_status, shop_id, shop_name, name, image_url, remark, timestamp_label, days_left, status, extra_info').eq('id', id).single();
+    const { data: current } = await supabase.from('b_style_demand').select('development_status, shop_id, shop_name, name, image_url, remark, timestamp_label, days_left, status, extra_info, source_public_id, ref_link, back_spu').eq('id', id).single();
 
-    // If currently in 'pattern' status, create a new work order for 'helping'
-    if (current?.development_status === 'pattern') {
-        // Create a new record for the helping request
-        const newRecord = {
-            shop_id: current.shop_id,
-            shop_name: current.shop_name,
-            name: current.name,
-            image_url: current.image_url,
-            remark: remark || current.remark,
-            timestamp_label: current.timestamp_label,
-            days_left: current.days_left,
-            status: 'developing',
-            development_status: 'helping',
-            pattern_schemes: schemes || [],
-            is_modify_img: true,
-            real_img_url: schemes?.[0]?.images?.[0] || null,
-            push_type: 'ASSIGN',
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-        };
+    if (!current) return res.status(404).json({ error: 'Style not found' });
 
-        const { error } = await supabase.from('b_style_demand').insert(newRecord);
-        if (error) return res.status(500).json({ error: error.message });
-        return res.json({ success: true, message: 'Created new helping work order' });
-    }
-
-    // Otherwise, update existing record (same type or from drafting)
-    const updates: any = {
+    // 修复工单覆盖问题：始终创建新记录 (INSERT) 以保留历史
+    const newRecord = {
+        shop_id: current.shop_id,
+        shop_name: current.shop_name,
+        name: current.name,
+        image_url: current.image_url,
+        remark: remark || current.remark,
+        timestamp_label: current.timestamp_label, // 保留原有时间标签
+        days_left: current.days_left,
+        status: 'developing',
         development_status: 'helping',
+        pattern_schemes: schemes || [],
+        is_modify_img: true,
+        real_img_url: schemes?.[0]?.images?.[0] || null,
+        push_type: 'ASSIGN',
+        source_public_id: current.source_public_id,
+        ref_link: current.ref_link,
+        created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
     };
-    if (remark) updates.remark = remark;
 
-    // Clear old reply
-    const newExtraInfo = { ...(current?.extra_info || {}) };
-    delete newExtraInfo.reply;
-    updates.extra_info = newExtraInfo;
-
-    if (schemes && schemes.length > 0) {
-        updates.pattern_schemes = schemes;
-        updates.is_modify_img = true;
-        const firstImg = schemes[0]?.images?.[0];
-        if (firstImg) {
-            updates.real_img_url = firstImg;
-        }
-    }
-
-    const { error } = await supabase
-        .from('b_style_demand')
-        .update(updates)
-        .eq('id', id);
-
+    const { error } = await supabase.from('b_style_demand').insert(newRecord);
     if (error) return res.status(500).json({ error: error.message });
-    res.json({ success: true });
+
+    // Optional: 如果需要，可以把旧记录标记为 'history' 或者不做处理(它自然会沉底)
+    // 但原需求是"工单被替代"，说明他们找不到旧的。现在insert新的，旧的还在，只是变成了列表中的另一条。
+    // 这符合"保留历史处理记录"的需求。
+
+    return res.json({ success: true, message: 'Created new helping work order' });
 });
 
 // POST /api/development/:id/spu - 上传SPU
@@ -250,52 +227,39 @@ router.post('/:id/pattern', async (req, res) => {
     const { schemes, remark } = req.body;
 
     // Check current status
-    const { data: current } = await supabase.from('b_style_demand').select('development_status, shop_id, shop_name, name, image_url, remark, timestamp_label, days_left, status, extra_info').eq('id', id).single();
+    const { data: current } = await supabase.from('b_style_demand').select('development_status, shop_id, shop_name, name, image_url, remark, timestamp_label, days_left, status, extra_info, source_public_id, ref_link, back_spu').eq('id', id).single();
 
-    // If currently in 'helping' status, create a new work order for 'pattern'
-    if (current?.development_status === 'helping') {
-        const newRecord = {
-            shop_id: current.shop_id,
-            shop_name: current.shop_name,
-            name: current.name,
-            image_url: current.image_url,
-            remark: remark || current.remark,
-            timestamp_label: current.timestamp_label,
-            days_left: current.days_left,
-            status: 'developing',
-            development_status: 'pattern',
-            pattern_schemes: schemes || [],
-            is_modify_img: false,
-            push_type: 'ASSIGN',
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-        };
+    if (!current) return res.status(404).json({ error: 'Style not found' });
 
-        const { error } = await supabase.from('b_style_demand').insert(newRecord);
-        if (error) return res.status(500).json({ error: error.message });
-        return res.json({ success: true, message: 'Created new pattern work order' });
-    }
-
-    // Otherwise, update existing record
-    const updates: any = {
+    // 修复工单覆盖问题：始终创建新记录 (INSERT) 以保留历史
+    // Always create new record regardless of previous state
+    const newRecord = {
+        shop_id: current.shop_id,
+        shop_name: current.shop_name,
+        name: current.name,
+        image_url: current.image_url,
+        remark: remark || current.remark,
+        timestamp_label: current.timestamp_label,
+        days_left: current.days_left,
+        status: 'developing',
         development_status: 'pattern',
         pattern_schemes: schemes || [],
+        is_modify_img: false,
+        push_type: 'ASSIGN',
+        source_public_id: current.source_public_id,
+        ref_link: current.ref_link,
+        created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
     };
-    if (remark) updates.remark = remark;
 
-    const { error } = await supabase
-        .from('b_style_demand')
-        .update(updates)
-        .eq('id', id);
-
-    // Clear reply
-    const newExtraInfo = { ...(current?.extra_info || {}) };
-    delete newExtraInfo.reply;
-    await supabase.from('b_style_demand').update({ extra_info: newExtraInfo }).eq('id', id);
-
+    const { error } = await supabase.from('b_style_demand').insert(newRecord);
     if (error) return res.status(500).json({ error: error.message });
-    res.json({ success: true });
+
+    // Clear reply if any on the OLD record? 
+    // Not needed if we are creating new record, the new one has no reply.
+    // The old one retains its reply as history. 
+
+    return res.json({ success: true, message: 'Created new pattern work order' });
 });
 
 export default router;

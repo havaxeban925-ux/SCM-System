@@ -52,6 +52,10 @@ app.use((req, res) => {
     res.status(404).send(`Cannot ${req.method} ${req.url}`);
 });
 
-app.listen(PORT, () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+const server = app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server (PID: ${process.pid}) running on http://localhost:${PORT}`);
+});
+
+server.on('error', (err) => {
+    console.error('Server startup error:', err);
 });

@@ -124,11 +124,12 @@ router.post('/same-price', async (req, res) => {
             is_urgent: req.body.isUrgent || false, // 加急标记
             pricing_details: items.map((i: any) => ({
                 skc: i.targetCode,
-                appliedPrice: parseFloat(i.suggestedPrice) || 0,
+                appliedPrice: parseFloat(i.refPrice) || 0,
                 buyerPrice: parseFloat(i.refPrice) || 0,
                 status: '复核中',
                 time: new Date().toISOString().split('T')[0],
-                refCode: i.refCode
+                refCode: i.refCode,
+                suggestedPrice: parseFloat(i.suggestedPrice) || 0
             }))
         })
         .select()
@@ -172,7 +173,7 @@ router.post('/price-increase', async (req, res) => {
 
 // POST /api/requests/anomaly - 创建异常申请
 router.post('/anomaly', async (req, res) => {
-    const { subType, targetCodes, content } = req.body;
+    const { shopName, subType, targetCodes, content } = req.body;
 
     // 生成系统编号 (Y = 异常)
     const orderNo = await generateOrderNo('Y');
@@ -184,6 +185,7 @@ router.post('/anomaly', async (req, res) => {
             sub_type: subType,
             target_codes: targetCodes,
             status: 'processing',
+            shop_name: shopName,
             order_no: orderNo,
             is_urgent: req.body.isUrgent || false, // 加急标记
             pricing_details: [{
@@ -280,21 +282,37 @@ router.post('/:id/secondary-review', async (req, res) => {
     res.json({ success: true });
 });
 
-// PATCH /api/requests/:id/status - 更新申请状态
+
+
+// PATCH /api/requests/:id/status - 更新工单状态（修复：记录处理人）
 router.patch('/:id/status', async (req, res) => {
     const { id } = req.params;
-    const { status } = req.body;
+    const { status, remark } = req.body;
+
+    // 获取处理人信息
+    const handlerName = decodeURIComponent(req.get('X-Buyer-Name') || '');
+
+    const updates: any = {
+        status,
+        updated_at: new Date().toISOString()
+    };
+
+    if (handlerName) {
+        updates.handler_name = handlerName;
+    }
+
+    if (remark) {
+        // 如果需要更新备注，这里可以添加逻辑，但 b_request_record 表结构中可能没有顶层 remark
+        // 通常备注在 pricing_details 或其他字段中
+    }
 
     const { error } = await supabase
         .from('b_request_record')
-        .update({
-            status,
-            updated_at: new Date().toISOString()
-        })
+        .update(updates)
         .eq('id', id);
 
     if (error) return res.status(500).json({ error: error.message });
-    res.json({ success: true });
+    res.json({ success: true, handler_name: handlerName });
 });
 
 // PATCH /api/requests/:id/urgent - 更新加急状态
@@ -418,8 +436,8 @@ router.post('/:id/initial-review', async (req, res) => {
         return res.status(404).json({ error: '工单不存在' });
     }
 
-    // 只能对处理中的工单进行初核
-    if (record.status !== 'processing') {
+    // 只能对待处理/处理中的工单进行初核
+    if (record.status !== 'processing' && record.status !== 'pending') {
         return res.status(400).json({ error: `当前状态(${record.status})不允许初核` });
     }
 
@@ -566,6 +584,71 @@ router.post('/:id/force-complete', async (req, res) => {
 
     if (error) return res.status(500).json({ error: error.message });
     res.json({ success: true, message: '复核完成，工单已关闭' });
+});
+
+// POST /api/requests/:id/reply - 回复工单（改图/打版帮看）
+router.post('/:id/reply', async (req, res) => {
+    const { id } = req.params;
+    const { replyImage, replyContent } = req.body;
+    const handlerName = decodeURIComponent(req.get('X-Buyer-Name') || '');
+
+    const { data: record, error: fetchError } = await supabase
+        .from('b_request_record')
+        .select('*')
+        .eq('id', id)
+        .single();
+
+    if (fetchError || !record) {
+        return res.status(404).json({ error: '工单不存在' });
+    }
+
+    // 更新 pricing_details 中的 reply 字段
+    // 假设 pricing_details 结构为 [{ ..., reply: { content, image, time } }]
+    // 如果是 style 类型，pricing_details 可能存储的是应用列表，或者 remark
+    // 根据 QuotationDrawer，style 申请存入 content 和 image_urls，或者 pricing_details (在 style-application 路由中)
+    // 让我们查看 style-application 路由是如何存储的...
+    // 现有代码 POST /style-application 插入 pricing_details: [{ images, remark }]
+
+    const currentDetails = Array.isArray(record.pricing_details) ? record.pricing_details : [];
+    const updatedDetails = currentDetails.map((item: any, index: number) => {
+        if (index === 0) { // 通常只更新第一个，或者此时应该是一个扁平结构？
+            return {
+                ...item,
+                reply: {
+                    content: replyContent,
+                    image: replyImage,
+                    time: new Date().toISOString(),
+                    handler: handlerName
+                }
+            };
+        }
+        return item;
+    });
+
+    // 如果 details 为空，可能需要初始化一个？
+    if (updatedDetails.length === 0) {
+        updatedDetails.push({
+            reply: {
+                content: replyContent,
+                image: replyImage,
+                time: new Date().toISOString(),
+                handler: handlerName
+            }
+        });
+    }
+
+    const { error } = await supabase
+        .from('b_request_record')
+        .update({
+            status: 'completed', // 回复即完成
+            pricing_details: updatedDetails,
+            handler_name: handlerName,
+            updated_at: new Date().toISOString()
+        })
+        .eq('id', id);
+
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ success: true });
 });
 
 export default router;

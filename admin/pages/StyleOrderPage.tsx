@@ -29,7 +29,7 @@ const StyleOrderPage: React.FC = () => {
     useEffect(() => {
         const fetchOrders = async () => {
             try {
-                const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+                const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:3001';
                 // Delay slightly to show loading state (optional, for better UX perception)
                 // await new Promise(r => setTimeout(r, 300));
 
@@ -126,8 +126,15 @@ const StyleOrderPage: React.FC = () => {
         }
 
         try {
-            const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
-            const res = await fetch(`${API_BASE}/api/admin/styles/${detailModal.order.id}/reply`, {
+            const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:3001';
+            let url = `${API_BASE}/api/admin/styles/${detailModal.order.id}/reply`;
+
+            // 如果是来自 request (改图/打版帮看) 的工单，调用新的回复接口
+            if (detailModal.order.source === 'request') {
+                url = `${API_BASE}/api/requests/${detailModal.order.id}/reply`;
+            }
+
+            const res = await fetch(url, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -157,7 +164,7 @@ const StyleOrderPage: React.FC = () => {
     const handleSubmitRemark = async () => {
         if (!detailModal.order) return;
         try {
-            const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+            const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:3001';
             const res = await fetch(`${API_BASE}/api/requests/${detailModal.order.id}`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
@@ -177,7 +184,7 @@ const StyleOrderPage: React.FC = () => {
     // 问题12修复：处理工单时调用API更新状态
     const handleProcess = async (id: string) => {
         try {
-            const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+            const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:3001';
             // Delay slightly to show loading state (optional, for better UX perception)
             // await new Promise(r => setTimeout(r, 300));
             const res = await fetch(`${API_BASE}/api/admin/styles/${id}/confirm`, {
@@ -258,7 +265,7 @@ const StyleOrderPage: React.FC = () => {
                                 <th>提交时间</th>
                                 <th>处理人</th>
                                 <th>状态</th>
-                                <th>操作</th>
+                                <th style={{ width: 100, textAlign: 'right' }}>操作</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -351,12 +358,10 @@ const StyleOrderPage: React.FC = () => {
                                 </div>
                             </div>
 
-                            {detailModal.order.content && (
-                                <div className="detail-section">
-                                    <h4>申请内容</h4>
-                                    <p>{detailModal.order.content}</p>
-                                </div>
-                            )}
+                            <div className="detail-section">
+                                <h4>申请内容</h4>
+                                <p>{detailModal.order.content || '暂无内容'}</p>
+                            </div>
 
                             {/* 显示改图/打版方案图片 */}
                             {detailModal.order.pattern_schemes && detailModal.order.pattern_schemes.length > 0 && (
@@ -464,9 +469,43 @@ const StyleOrderPage: React.FC = () => {
                                 </>
                             )}
                             {!(['改图帮看', '打版帮看', '上传SPU'].includes(detailModal.order.sub_type)) && (
-                                <button className="btn btn-primary" onClick={handleSubmitRemark}>
-                                    提交备注
-                                </button>
+                                <>
+                                    <button className="btn btn-success" onClick={async () => {
+                                        if (!confirm('确认已处理该请求？')) return;
+                                        try {
+                                            const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:3001';
+                                            await fetch(`${API_BASE}/api/requests/${detailModal.order!.id}/status`, {
+                                                method: 'PATCH',
+                                                headers: { 'Content-Type': 'application/json' },
+                                                body: JSON.stringify({ status: 'completed' })
+                                            });
+                                            alert('已标记为完成');
+                                            setOrders(orders.map(o => o.id === detailModal.order!.id ? { ...o, status: '已处理' as const } : o));
+                                            setDetailModal({ show: false, order: null });
+                                        } catch (e) { alert('操作失败'); }
+                                    }}>
+                                        确认处理
+                                    </button>
+                                    <button className="btn btn-danger" onClick={async () => {
+                                        if (!confirm('确认驳回该请求？')) return;
+                                        try {
+                                            const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:3001';
+                                            await fetch(`${API_BASE}/api/requests/${detailModal.order!.id}/audit`, {
+                                                method: 'POST',
+                                                headers: { 'Content-Type': 'application/json' },
+                                                body: JSON.stringify({ action: 'reject', feedback: buyerRemark || '买手驳回' })
+                                            });
+                                            alert('已驳回');
+                                            setOrders(orders.map(o => o.id === detailModal.order!.id ? { ...o, status: '已驳回' as const } : o));
+                                            setDetailModal({ show: false, order: null });
+                                        } catch (e) { alert('操作失败'); }
+                                    }}>
+                                        驳回
+                                    </button>
+                                    <button className="btn btn-primary" onClick={handleSubmitRemark}>
+                                        仅保存备注
+                                    </button>
+                                </>
                             )}
                             <button className="btn btn-outline" onClick={() => setDetailModal({ show: false, order: null })}>
                                 关闭

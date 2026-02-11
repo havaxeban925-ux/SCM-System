@@ -55,7 +55,7 @@ const PushManage: React.FC = () => {
         // Fetch Real Shops
         const fetchShops = async () => {
             try {
-                const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+                const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:3001';
                 // Fetch up to 1000 shops for the selector
                 const res = await fetch(`${API_BASE}/api/admin/shops?pageSize=1000`);
                 if (!res.ok) throw new Error('Failed to fetch shops');
@@ -78,7 +78,7 @@ const PushManage: React.FC = () => {
         // Fetch Real Public Styles
         const fetchPublicStyles = async () => {
             try {
-                const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+                const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:3001';
                 const res = await fetch(`${API_BASE}/api/styles/public?pageSize=100`);
                 if (!res.ok) throw new Error('Failed to fetch public styles');
                 const json = await res.json();
@@ -119,7 +119,7 @@ const PushManage: React.FC = () => {
 
         try {
 
-            const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+            const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:3001';
             const res = await fetch(`${API_BASE}/api/admin/push/private`, {
                 method: 'POST',
                 headers: {
@@ -167,7 +167,7 @@ const PushManage: React.FC = () => {
         if (!publicStyle) return alert('请选择风格');
 
         try {
-            const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+            const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:3001';
             const res = await fetch(`${API_BASE}/api/admin/push/public`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },

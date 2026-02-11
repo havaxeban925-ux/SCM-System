@@ -42,7 +42,7 @@ const StyleManage: React.FC = () => {
     const handleConfirmSpu = async (id: string) => {
         if (!confirm('确认审核通过并录入SPU库吗？')) return;
         try {
-            const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+            const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:3001';
             const res = await fetch(`${API_BASE}/api/development/${id}/spu-confirm`, {
                 method: 'POST'
             });

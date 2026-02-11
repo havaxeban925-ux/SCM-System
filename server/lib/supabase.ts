@@ -11,7 +11,14 @@ export const getSupabase = (): SupabaseClient => {
         if (!supabaseUrl || !supabaseKey) {
             throw new Error('SUPABASE_URL and SUPABASE_ANON_KEY must be set in environment');
         }
-        _supabase = createClient(supabaseUrl, supabaseKey);
+        _supabase = createClient(supabaseUrl, supabaseKey, {
+            auth: {
+                persistSession: false,
+                autoRefreshToken: false,
+                detectSessionInUrl: false
+            }
+        });
+        console.log('Supabase client initialized with URL:', supabaseUrl);
     }
     return _supabase;
 };

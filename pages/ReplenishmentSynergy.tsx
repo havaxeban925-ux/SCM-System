@@ -20,6 +20,7 @@ function toReplenishmentItem(r: RestockOrder): ReplenishmentItem {
     case 'shipped': status = '待买手确认入仓'; break;
     case 'completed': status = '已确认入仓'; break;
     case 'cancelled': status = '已取消' as any; break;
+    case 'rejected': status = '已拒绝' as any; break;
     default: status = '待商家接单';
   }
 
@@ -60,7 +61,7 @@ const ReplenishmentSynergy: React.FC = () => {
           ...toReplenishmentItem(r),
           _dbId: r.id,
           is_urgent: (r as any).is_urgent || false,
-          shopId: (r as any).shop_id || '' // Assuming shop_id is available
+          shopId: (r as any).shop_code || (r as any).shop_id || '' // Prioritize shop_code
         })));
       } catch (err) {
         console.error('Error loading restock orders:', err);
@@ -238,7 +239,7 @@ const ReplenishmentSynergy: React.FC = () => {
       </div>
 
       <div className="flex gap-2 flex-wrap mb-4">
-        {['全部状态', '待商家接单', '待买手复核', '生产中', '待买手确认入仓', '已确认入仓'].map(status => (
+        {['全部状态', '待商家接单', '待买手复核', '生产中', '待买手确认入仓', '已确认入仓', '已拒绝', '已取消'].map(status => (
           <button
             key={status}
             onClick={() => setActiveTab(status)}
@@ -271,23 +272,15 @@ const ReplenishmentSynergy: React.FC = () => {
               {filteredItems.map(item => (
                 <tr key={item.id} className="hover:bg-slate-50/80 transition-colors">
                   <td className="px-6 py-4">
-                    <div className="flex items-center gap-4">
-                      {item.image ? (
-                        <img src={item.image} alt={item.name} className="h-12 w-12 rounded-lg object-cover border border-slate-200" />
-                      ) : (
-                        <div className="h-12 w-12 rounded-lg bg-slate-100 flex items-center justify-center text-slate-400 text-xs">No Img</div>
-                      )}
-                      <div>
-                        <div className="font-bold text-slate-700">{item.id}</div>
-                        {/* 需求：SKC下方显示店铺ID */}
-                        <div className="text-xs text-slate-500 mt-1">店铺ID: <span className="font-mono">{item.shopId || '-'}</span></div>
+                    <div>
+                      <div className="font-bold text-slate-700">{item.id}</div>
+                      <div className="text-xs text-slate-500 mt-1">店铺: <span className="font-mono">{item.shopId || '-'}</span></div>
 
-                        {item.is_urgent && (
-                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-red-100 text-red-700 mt-1">
-                            加急
-                          </span>
-                        )}
-                      </div>
+                      {item.is_urgent && (
+                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-red-100 text-red-700 mt-1">
+                          加急
+                        </span>
+                      )}
                     </div>
                   </td>
                   <td className="px-6 py-5 text-sm font-bold align-top">{item.planQty}</td>
@@ -321,7 +314,8 @@ const ReplenishmentSynergy: React.FC = () => {
                       <span className={`inline-flex items-center px-3 py-1 rounded-full text-[11px] font-bold border ${item.status === '待商家接单' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' :
                         item.status === '待买手复核' ? 'bg-amber-50 text-amber-700 border-amber-200' :
                           item.status === '已确认入仓' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                            'bg-blue-50 text-blue-700 border-blue-200'
+                            (item.status === '已拒绝' || item.status === '已取消') ? 'bg-red-50 text-red-700 border-red-200' :
+                              'bg-blue-50 text-blue-700 border-blue-200'
                         }`}>
                         {item.status}
                       </span>
@@ -337,15 +331,15 @@ const ReplenishmentSynergy: React.FC = () => {
                             onClick={async () => {
                               const reason = prompt('请输入拒绝理由：');
                               if (reason !== null) {
-                                const API_BASE = (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:3001';
+                                const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:3001';
                                 const res = await fetch(`${API_BASE}/api/restock/${item._dbId}/reject`, {
                                   method: 'POST',
                                   headers: { 'Content-Type': 'application/json' },
                                   body: JSON.stringify({ reason })
                                 });
                                 if (res.ok) {
-                                  setItems(items.map(i => i.id === item.id ? { ...i, status: 'reviewing' as any } : i));
-                                  alert('已提交拒绝申请，等待买手确认');
+                                  setItems(items.map(i => i.id === item.id ? { ...i, status: '已拒绝' as any } : i));
+                                  alert('已拒绝接单');
                                 }
                               }
                             }}

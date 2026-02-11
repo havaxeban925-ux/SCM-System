@@ -164,7 +164,7 @@ const RequestWorkbench: React.FC<Props> = ({ onNewRequest }) => {
   const handleMerchantConfirm = async () => {
     if (!confirmModal.record) return;
 
-    const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+    const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:3001';
 
     try {
       const res = await fetch(`${API_BASE}/api/requests/${confirmModal.record.id}/merchant-confirm`, {
@@ -341,6 +341,8 @@ const RequestWorkbench: React.FC<Props> = ({ onNewRequest }) => {
           >
             <option value="">全部</option>
             <option value="处理中">处理中</option>
+            <option value="待确认">待确认</option>
+            <option value="待复核">待复核</option>
             <option value="已完成">已完成</option>
             <option value="已驳回">已驳回</option>
             <option value="已查看">已查看</option>
@@ -365,7 +367,7 @@ const RequestWorkbench: React.FC<Props> = ({ onNewRequest }) => {
                 <th className="px-6 py-4">关联代码</th>
                 <th className="px-6 py-4">提交时间</th>
                 <th className="px-6 py-4">状态</th>
-                <th className="px-6 py-4 text-right">操作</th>
+                <th className="px-6 py-4 text-right w-[160px]">操作</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">

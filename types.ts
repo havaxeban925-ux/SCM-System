@@ -36,7 +36,7 @@ export interface ReplenishmentItem {
   image: string;
   planQty: number;
   acceptedQty: number;
-  status: '待商家接单' | '待买手复核' | '生产中' | '待买手确认入仓' | '已确认入仓' | '已发货';
+  status: '待商家接单' | '待买手复核' | '生产中' | '待买手确认入仓' | '已确认入仓' | '已发货' | '已取消' | '已拒绝';
   expiryDate: string;
   reductionReason?: string;
 }

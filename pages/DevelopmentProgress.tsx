@@ -22,15 +22,16 @@ interface ExtendedStyleItem extends StyleItem {
   updatedAt?: string; // 新增：最近操作时间
   reply?: { image?: string; content?: string; time?: string; processor?: string };
   shopCode?: string; // 店铺编码
+  sys_shop?: { shop_code: string }; // Add sys_shop type definition
 }
 
 // 转换数据库格式到前端格式
-function toStyleItem(s: StyleDemand): ExtendedStyleItem {
+function toStyleItem(s: StyleDemand & { sys_shop?: { shop_code: string } }): ExtendedStyleItem {
   return {
     id: s.id,
     name: s.name,
     image: s.image_url || '',
-    shopId: s.shop_id || '',
+    shopId: s.sys_shop?.shop_code || s.shop_code || s.shop_id || '',
     shopName: s.shop_name || '',
     remark: s.remark || '',
     timestamp: s.timestamp_label || '',

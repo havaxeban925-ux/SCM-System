@@ -17,7 +17,7 @@ interface PushRecord {
         key_id?: string;
         key_name?: string;
         shop_code?: string; // Add shop_code
-        status: 'pending' | 'accepted' | 'rejected';
+        status: 'pending' | 'accepted' | 'rejected' | 'abandoned';
         development_status?: string; // 开发状态
         push_time: string;
         shops: Array<{
@@ -26,7 +26,7 @@ interface PushRecord {
             key_id?: string;
             key_name?: string;
             shop_code?: string; // Add shop_code
-            status: 'pending' | 'accepted' | 'rejected';
+            status: 'pending' | 'accepted' | 'rejected' | 'abandoned';
             push_time: string;
         }>;
         handler_name?: string; // OPT-1
@@ -59,7 +59,7 @@ const PushHistory: React.FC = () => {
     useEffect(() => {
         const fetchData = async () => {
             try {
-                const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+                const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:3001';
 
                 // Fetch shops for the "Add Private Push" modal filters
                 const shopsRes = await fetch(`${API_BASE}/api/admin/shops?pageSize=1000`);
@@ -136,7 +136,7 @@ const PushHistory: React.FC = () => {
         if (!detailModal.record) return;
 
         try {
-            const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+            const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:3001';
             const res = await fetch(`${API_BASE}/api/admin/push/private`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -174,7 +174,7 @@ const PushHistory: React.FC = () => {
         if (!confirm('确定将此款式推入公池？')) return;
 
         try {
-            const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+            const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:3001';
             const res = await fetch(`${API_BASE}/api/admin/push/transfer/public`, {
                 method: 'POST',
                 headers: {
@@ -431,7 +431,8 @@ const PushHistory: React.FC = () => {
                                                         {shop.development_status === 'abandoned' ? '已放弃' :
                                                             shop.development_status === 'success' ? '已完成' :
                                                                 shop.status === 'rejected' ? '已拒绝' :
-                                                                    shop.status === 'pending' ? '待处理' : '打版中'}
+                                                                    shop.status === 'abandoned' ? '已放弃' :
+                                                                        shop.status === 'pending' ? '待处理' : '打版中'}
                                                     </span>
                                                 </td>
                                             </tr>

@@ -19,15 +19,16 @@ const AnomalyOrderPage: React.FC = () => {
     const [orders, setOrders] = useState<AnomalyOrder[]>([]);
 
     const deriveCategory = (subType: string) => {
+        if (subType === '申请下架') return '申请下架'; // 新增：明确申请下架
         if (subType?.includes('尺码')) return '尺码问题';
         if (subType?.includes('误判') || subType?.includes('图')) return '图片异常';
-        return '其他';
+        return '大货异常'; // Default to '大货异常' for others (like '大货异常')
     };
 
     useEffect(() => {
         const fetchOrders = async () => {
             try {
-                const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+                const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:3001';
                 const res = await fetch(`${API_BASE}/api/requests?type=anomaly&pageSize=100`);
                 if (!res.ok) throw new Error('Failed to fetch anomaly orders');
                 const data = await res.json();
@@ -40,9 +41,9 @@ const AnomalyOrderPage: React.FC = () => {
                     target_codes: item.target_codes || [],
                     submit_time: item.submit_time ? new Date(item.submit_time).toLocaleString() : '',
                     status: item.status === 'processing' ? '待处理' :
-                        item.status === 'completed' || item.status === 'approved' ? '已处理' :
+                        (item.status === 'completed' || item.status === 'approved') ? '已处理' :
                             item.status === 'rejected' ? '已驳回' : '待处理',
-                    content: item.remark,
+                    content: item.remark || (item.pricing_details?.[0]?.content), // 兼容取值
                     is_urgent: item.is_urgent,
                     handler_name: item.handler_name
                 }));
@@ -65,9 +66,20 @@ const AnomalyOrderPage: React.FC = () => {
         return categoryMatch && statusMatch;
     });
 
-    const handleProcess = (id: string) => {
-        setOrders(orders.map(o => o.id === id ? { ...o, status: '已处理' as const } : o));
-        alert('已处理');
+    const handleProcess = async (id: string) => {
+        try {
+            const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:3001';
+            await fetch(`${API_BASE}/api/requests/${id}/status`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status: 'completed' }),
+            });
+            setOrders(orders.map(o => o.id === id ? { ...o, status: '已处理' as const } : o));
+            alert('已处理');
+        } catch (err) {
+            console.error('Failed to process:', err);
+            alert('操作失败');
+        }
     };
 
     const handleReject = (id: string) => {
@@ -143,11 +155,11 @@ const AnomalyOrderPage: React.FC = () => {
                             <th>店铺</th>
                             <th>一级类型</th>
                             <th>二级类型</th>
-                            <th>关联编码</th>
+                            <th>关联编码/运单号</th>
                             <th>提交时间</th>
-                            <th>Handler</th>
+                            <th>处理人</th>
                             <th>状态</th>
-                            <th>操作</th>
+                            <th style={{ width: 280, textAlign: 'right' }}>操作</th>
                         </tr>
                     </thead>
                     <tbody>

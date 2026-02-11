@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { supabase } from '../lib/supabase';
+import crypto from 'crypto';
 
 const router = Router();
 
@@ -14,7 +15,7 @@ router.get('/private', async (req, res) => {
 
     let query = supabase
         .from('b_style_demand')
-        .select('*', { count: 'exact' });
+        .select('*, sys_shop(shop_code)', { count: 'exact' });
 
     // Handle status filter
     if (status === 'all') {
@@ -73,7 +74,13 @@ router.get('/public', async (req, res) => {
         .order('created_at', { ascending: false })
         .range(offset, offset + pageSize - 1);
 
-    if (error) return res.status(500).json({ error: error.message });
+    if (error) {
+        // If range is invalid (e.g. empty table), Supabase might return error 416 or similar, 
+        // but typically it just returns empty data. 
+        // We log it but don't crash if it's just a range issue.
+        console.error('Fetch public styles error:', error);
+        return res.json({ data: [], total: 0, page, pageSize });
+    }
     res.json({ data: data || [], total: count || 0, page, pageSize });
 });
 
@@ -112,30 +119,69 @@ router.post('/:id/abandon', async (req, res) => {
 });
 
 // POST /api/styles/public/:id/intent - 表达意向
+// 表达意向（修复：不仅增加计数，还创建私有记录）
 router.post('/public/:id/intent', async (req, res) => {
     const { id } = req.params;
+    const { shopId, shopName } = req.body; // Expect shop info from frontend
 
-    const { data: style, error: fetchError } = await supabase
-        .from('b_public_style')
-        .select('intent_count, max_intents')
-        .eq('id', id)
-        .single();
+    try {
+        // 1. Get Public Style to copy details
+        const { data: style, error: fetchError } = await supabase
+            .from('b_public_style')
+            .select('*')
+            .eq('id', id)
+            .single();
 
-    if (fetchError || !style) {
-        return res.status(404).json({ error: 'Style not found' });
+        if (fetchError || !style) {
+            return res.status(404).json({ error: 'Public style not found' });
+        }
+
+        if (style.intent_count >= style.max_intents) {
+            return res.status(400).json({ error: 'Max intents reached' });
+        }
+
+        // 2. Create new record in b_style_demand (Private List)
+        const newStyle = {
+            id: crypto.randomUUID(),
+            shop_id: shopId, // Must be provided by frontend
+            shop_name: shopName,
+            name: style.name,
+            category: style.category,
+            image_url: style.image_url,
+            // intent_price: style.price, // Optional if we want to carry over price
+            status: 'new', // Appears in Private List as New
+            push_type: 'POOL',
+            source_public_id: id,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            // No development_status yet, or maybe 'wait_confirm'? 'new' is fine for Private List.
+        };
+
+        const { error: insertError } = await supabase
+            .from('b_style_demand')
+            .insert(newStyle);
+
+        if (insertError) {
+            console.error('Error creating private intent record:', insertError);
+            return res.status(500).json({ error: 'Failed to create intent record' });
+        }
+
+        // 3. Increment intent count in Public Style
+        const { error: updateError } = await supabase
+            .from('b_public_style')
+            .update({ intent_count: style.intent_count + 1 })
+            .eq('id', id);
+
+        if (updateError) {
+            console.error('Error updating public style intent count:', updateError);
+            // Non-critical if insert succeeded, but good to log.
+        }
+
+        res.json({ success: true, message: 'Intent recorded and added to private list' });
+    } catch (error) {
+        console.error('Error handling intent:', error);
+        res.status(500).json({ error: 'Internal server error' });
     }
-
-    if (style.intent_count >= style.max_intents) {
-        return res.status(400).json({ error: 'Max intents reached' });
-    }
-
-    const { error } = await supabase
-        .from('b_public_style')
-        .update({ intent_count: style.intent_count + 1 })
-        .eq('id', id);
-
-    if (error) return res.status(500).json({ error: error.message });
-    res.json({ success: true });
 });
 
 // POST /api/styles/public/:id/confirm - 从公池接款

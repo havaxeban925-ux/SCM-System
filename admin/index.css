@@ -496,6 +496,7 @@ body {
   font-weight: 500;
   border-radius: var(--radius-full);
   letter-spacing: 0.01em;
+  white-space: nowrap;
 }
 
 .status-badge::before {

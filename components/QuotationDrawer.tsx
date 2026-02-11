@@ -896,8 +896,6 @@ const RequestDrawer: React.FC<Props> = ({ onClose }) => {
                     >
                       <option value="">请选择</option>
                       <option value="商家要款">商家要款</option>
-                      <option value="改图帮看">改图帮看</option>
-                      <option value="打版帮看">打版帮看</option>
                     </select>
                   </div>
 
@@ -917,7 +915,7 @@ const RequestDrawer: React.FC<Props> = ({ onClose }) => {
                             const shops = merchant.shops || [];
                             return shops.map((shop: any) => (
                               <option key={shop.id || shop.shop_name} value={shop.shop_name}>
-                                {shop.key_id ? `[${shop.key_id}] ` : ''}{shop.shop_name}
+                                [{shop.shop_code || shop.id}] {shop.shop_name}
                               </option>
                             ));
                           }
@@ -952,148 +950,100 @@ const RequestDrawer: React.FC<Props> = ({ onClose }) => {
                     />
                   </div>
 
-                  <button
-                    onClick={async () => {
-                      if (!pricingSubType) {
-                        setToast({ show: true, type: 'error', message: '请选择二级类目' });
-                        setTimeout(() => setToast(t => ({ ...t, show: false })), 3000);
-                        return;
-                      }
-                      if (!styleImages[0]) {
-                        setToast({ show: true, type: 'error', message: '请至少上传一张款式图片' });
-                        setTimeout(() => setToast(t => ({ ...t, show: false })), 3000);
-                        return;
-                      }
-                      if (!styleShopName) {
-                        setToast({ show: true, type: 'error', message: '请选择店铺' });
-                        setTimeout(() => setToast(t => ({ ...t, show: false })), 3000);
-                        return;
-                      }
+
+
+                  <div className="flex gap-3">
+                    <button onClick={async () => {
+                      if (!pricingSubType && module === 'pricing') return alert('请先选择二级类目');
+                      if (!confirm('确认提交所有申请吗？')) return;
                       try {
-                        const res = await fetch(`${API_BASE}/api/requests`, {
-                          method: 'POST',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({
-                            type: 'style',
-                            shop_name: styleShopName,
-                            sub_type: pricingSubType,
-                            content: styleRemark,
-                            image_urls: styleImages.filter(Boolean)
-                          })
-                        });
-                        if (!res.ok) throw new Error('提交失败');
-                        setToast({ show: true, type: 'success', message: `${pricingSubType}申请提交成功！` });
-                        setTimeout(() => setToast(t => ({ ...t, show: false })), 3000);
-                        setStyleImages([]);
-                        setStyleRemark('');
-                        setStyleShopName('');
-                        setPricingSubType('');
+                        if (module === 'pricing') {
+                          if (pricingSubType.includes('报价单') && quoteList.length > 0) {
+                            await createQuoteRequest(pricingSubType, shopName, quoteList.map(q => ({
+                              type: q.type.includes('毛织') ? 'WOOL' as const : 'NORMAL' as const,
+                              code: q.code,
+                              price: parseFloat(q.price)
+                            })));
+                          } else if (pricingSubType === '同款同价' && samePriceList.length > 0) {
+                            await createSamePriceRequest(shopName, samePriceList);
+                          } else if (pricingSubType === '申请涨价' && increaseList.length > 0) {
+                            await createPriceIncreaseRequest(shopName, increaseList);
+                          }
+                        } else if (module === 'anomaly') {
+                          const anomalyLabels: Record<string, string> = {
+                            size: '尺码问题',
+                            off_shelf: '申请下架',
+                            image: '图片异常',
+                            bulk: '大货异常',
+                            no_audit: '申请免审'
+                          };
+
+                          // Verification
+                          if (anomalyType === 'no_audit' && !anomalySubType) {
+                            alert('请选择三级模块');
+                            return;
+                          }
+
+                          // Construct structured content
+                          const extraData: any = {
+                            subType: anomalySubType,
+                            offShelfReturn: anomalyType === 'off_shelf' ? offShelfReturn : undefined,
+                            offShelfReason: anomalyType === 'off_shelf' ? offShelfReason : undefined,
+                            isFirstOrder: anomalyType === 'bulk' ? isFirstOrder : undefined,
+                            obmShopId: (anomalyType === 'no_audit' && anomalySubType === 'obm_no_audit') ? obmShopId : undefined,
+                            images: (anomalyType === 'bulk' && isFirstOrder === 'no') ? anomalyImages.filter(Boolean) : undefined
+                          };
+
+                          const codes = targetCodes.split(/[\s\n]+/).filter(c => c.trim());
+                          if (codes.length > 0) {
+                            // Pass structured data as JSON string in content field
+                            await createAnomalyRequest(shopName, anomalyLabels[anomalyType] || anomalyType, codes, JSON.stringify(extraData));
+                          }
+                        } else if (module === 'style') {
+                          // 款式申请提交 - 问题7修复：添加API_BASE
+                          if (styleApplicationList.length > 0) {
+                            const response = await fetch(`${API_BASE}/api/requests/style-application`, {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({
+                                applications: styleApplicationList
+                              })
+                            });
+                            if (!response.ok) throw new Error('款式申请提交失败');
+                          } else if (styleImages[0]) {
+                            // 单个款式直接提交（问题6：删除添加到列表后直接提交）
+                            const response = await fetch(`${API_BASE}/api/requests/style-application`, {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({
+                                applications: [{
+                                  shopName: styleShopName,
+                                  images: styleImages,
+                                  remark: styleRemark
+                                }]
+                              })
+                            });
+                            if (!response.ok) throw new Error('款式申请提交失败');
+                          }
+                        }
+                        // 问题4：显示顶部Toast通知
+                        setToast({ show: true, type: 'success', message: '提交成功！工单已发送至买手端处理' });
+                        setTimeout(() => {
+                          setToast({ show: false, type: 'success', message: '' });
+                          onClose();
+                        }, 2000);
                       } catch (err) {
+                        console.error('Submit error:', err);
+                        // 问题4：显示失败Toast
                         setToast({ show: true, type: 'error', message: '提交失败，请重试' });
-                        setTimeout(() => setToast(t => ({ ...t, show: false })), 3000);
+                        setTimeout(() => setToast({ show: false, type: 'error', message: '' }), 3000);
                       }
-                    }}
-                    className="w-full py-3 bg-blue-600 text-white rounded-xl text-sm font-bold shadow-md hover:bg-blue-700 transition-colors"
-                  >
-                    提交申请
-                  </button>
+                    }} className="flex-[2] py-3.5 bg-[#1677ff] text-white rounded-xl text-sm font-bold shadow-lg hover:bg-blue-600 transition-all active:scale-[0.98]">提交所有申请</button>
+                    <button onClick={onClose} className="flex-1 py-3.5 border border-slate-300 rounded-xl text-sm font-bold text-slate-600 hover:bg-slate-50 transition-colors">取消</button>
+                  </div>
                 </div>
               </div>
             )}
-          </div>
-
-          <div className="flex gap-3">
-            <button onClick={async () => {
-              if (!pricingSubType && module === 'pricing') return alert('请先选择二级类目');
-              if (!confirm('确认提交所有申请吗？')) return;
-              try {
-                if (module === 'pricing') {
-                  if (pricingSubType.includes('报价单') && quoteList.length > 0) {
-                    await createQuoteRequest(pricingSubType, shopName, quoteList.map(q => ({
-                      type: q.type.includes('毛织') ? 'WOOL' as const : 'NORMAL' as const,
-                      code: q.code,
-                      price: parseFloat(q.price)
-                    })));
-                  } else if (pricingSubType === '同款同价' && samePriceList.length > 0) {
-                    await createSamePriceRequest(shopName, samePriceList);
-                  } else if (pricingSubType === '申请涨价' && increaseList.length > 0) {
-                    await createPriceIncreaseRequest(shopName, increaseList);
-                  }
-                } else if (module === 'anomaly') {
-                  const anomalyLabels: Record<string, string> = {
-                    size: '尺码问题',
-                    off_shelf: '申请下架',
-                    image: '图片异常',
-                    bulk: '大货异常',
-                    no_audit: '申请免审'
-                  };
-
-                  // Verification
-                  if (anomalyType === 'bulk' && isFirstOrder === 'no' && !anomalyImages[0]) {
-                    alert('非首单必须上传爆旺款截图');
-                    return;
-                  }
-                  if (anomalyType === 'no_audit' && !anomalySubType) {
-                    alert('请选择三级模块');
-                    return;
-                  }
-
-                  // Construct structured content
-                  const extraData: any = {
-                    subType: anomalySubType,
-                    offShelfReturn: anomalyType === 'off_shelf' ? offShelfReturn : undefined,
-                    offShelfReason: anomalyType === 'off_shelf' ? offShelfReason : undefined,
-                    isFirstOrder: anomalyType === 'bulk' ? isFirstOrder : undefined,
-                    obmShopId: (anomalyType === 'no_audit' && anomalySubType === 'obm_no_audit') ? obmShopId : undefined,
-                    images: (anomalyType === 'bulk' && isFirstOrder === 'no') ? anomalyImages.filter(Boolean) : undefined
-                  };
-
-                  const codes = targetCodes.split(/[\s\n]+/).filter(c => c.trim());
-                  if (codes.length > 0) {
-                    // Pass structured data as JSON string in content field
-                    await createAnomalyRequest(anomalyLabels[anomalyType] || anomalyType, codes, JSON.stringify(extraData));
-                  }
-                } else if (module === 'style') {
-                  // 款式申请提交 - 问题7修复：添加API_BASE
-                  if (styleApplicationList.length > 0) {
-                    const response = await fetch(`${API_BASE}/api/requests/style-application`, {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({
-                        applications: styleApplicationList
-                      })
-                    });
-                    if (!response.ok) throw new Error('款式申请提交失败');
-                  } else if (styleImages[0]) {
-                    // 单个款式直接提交（问题6：删除添加到列表后直接提交）
-                    const response = await fetch(`${API_BASE}/api/requests/style-application`, {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({
-                        applications: [{
-                          shopName: styleShopName,
-                          images: styleImages,
-                          remark: styleRemark
-                        }]
-                      })
-                    });
-                    if (!response.ok) throw new Error('款式申请提交失败');
-                  }
-                }
-                // 问题4：显示顶部Toast通知
-                setToast({ show: true, type: 'success', message: '提交成功！工单已发送至买手端处理' });
-                setTimeout(() => {
-                  setToast({ show: false, type: 'success', message: '' });
-                  onClose();
-                }, 2000);
-              } catch (err) {
-                console.error('Submit error:', err);
-                // 问题4：显示失败Toast
-                setToast({ show: true, type: 'error', message: '提交失败，请重试' });
-                setTimeout(() => setToast({ show: false, type: 'error', message: '' }), 3000);
-              }
-            }} className="flex-[2] py-3.5 bg-[#1677ff] text-white rounded-xl text-sm font-bold shadow-lg hover:bg-blue-600 transition-all active:scale-[0.98]">提交所有申请</button>
-            <button onClick={onClose} className="flex-1 py-3.5 border border-slate-300 rounded-xl text-sm font-bold text-slate-600 hover:bg-slate-50 transition-colors">取消</button>
           </div>
         </div>
       </div>

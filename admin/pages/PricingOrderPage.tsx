@@ -27,7 +27,7 @@ const PricingOrderPage: React.FC = () => {
     // ✅ Phase 1 优化: 数据刷新函数
     const refreshOrders = async () => {
         try {
-            const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+            const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:3001';
             const res = await fetch(`${API_BASE}/api/requests?type=pricing&pageSize=100`);
             if (!res.ok) throw new Error('Failed to fetch pricing orders');
             const data = await res.json();
@@ -480,7 +480,7 @@ const PricingOrderPage: React.FC = () => {
                             <th>申请价格</th>
                             <th>提交时间</th>
                             <th>状态</th>
-                            <th>操作</th>
+                            <th style={{ width: 220, textAlign: 'right' }}>操作</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -545,12 +545,7 @@ const PricingOrderPage: React.FC = () => {
                                 </td>
                                 <td>
                                     <div className="action-buttons">
-                                        {order.status === '未处理' && (
-                                            <button className="btn btn-sm btn-primary" onClick={() => handleProcess(order.id)}>
-                                                处理
-                                            </button>
-                                        )}
-                                        {order.status === '处理中' && (
+                                        {(order.status === '未处理' || order.status === '处理中') && (
                                             <button className="btn btn-sm btn-success" onClick={() => handleOpenInitialReview(order)}>
                                                 初核
                                             </button>
@@ -561,18 +556,9 @@ const PricingOrderPage: React.FC = () => {
                                             </button>
                                         )}
                                         {order.status === '待确认' && (
-                                            <button className="btn btn-sm btn-primary" onClick={async () => {
-                                                const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
-                                                await fetch(`${API_BASE}/api/requests/${order.id}/confirm`, { method: 'POST' });
-                                                await refreshOrders();
-                                            }}>
-                                                确认价格
-                                            </button>
-                                        )}
-                                        {order.status !== '已完成' && (
-                                            <button className="btn btn-sm btn-danger" onClick={() => handleReject(order.id)}>
-                                                驳回
-                                            </button>
+                                            <span style={{ fontSize: 11, color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                                                等待商家确认...
+                                            </span>
                                         )}
                                         <button className="btn btn-sm btn-outline" onClick={() => setDetailModal({ show: true, order })}>
                                             详情
@@ -679,6 +665,21 @@ const PricingOrderPage: React.FC = () => {
                                     <label className="form-label">商家拒绝原因</label>
                                     <div style={{ fontSize: 13, color: 'var(--danger)', padding: '8px', background: 'var(--bg-secondary)', borderRadius: 4 }}>
                                         {reviewModal.order.reason}
+                                    </div>
+                                </div>
+                            )}
+                            {reviewModal.type === 'force' && reviewModal.order.pricing_details?.[0]?.secondPrice && (
+                                <div className="form-group">
+                                    <label className="form-label">商家二次报价 (Counter Offer)</label>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '8px', background: '#fff7ed', borderRadius: 4, border: '1px solid #ffedd5' }}>
+                                        <div style={{ fontSize: 15, fontWeight: 600, color: '#c2410c' }}>
+                                            ¥{reviewModal.order.pricing_details[0].secondPrice}
+                                        </div>
+                                        {reviewModal.order.pricing_details[0].secondReason && (
+                                            <div style={{ fontSize: 12, color: '#9a3412' }}>
+                                                {reviewModal.order.pricing_details[0].secondReason}
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                             )}
