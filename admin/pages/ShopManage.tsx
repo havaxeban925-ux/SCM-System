@@ -100,7 +100,7 @@ const ShopManage: React.FC = () => {
             const pageSize = 1000;
 
             while (true) {
-                const url = new URL(`${API_BASE}/api/admin/shops`);
+                const url = new URL(`${API_BASE}/api/admin/shops`, window.location.origin);
                 url.searchParams.set('page', page.toString());
                 url.searchParams.set('pageSize', pageSize.toString());
 
