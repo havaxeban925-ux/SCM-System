@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import StyleManage from './pages/StyleManage';
 import ShopManage from './pages/ShopManage';
 import PushManage from './pages/PushManage';
@@ -29,11 +29,6 @@ const USER_AVATARS: Record<string, string> = {
 };
 
 const App: React.FC = () => {
-    // VERSION CHECK LOG
-    useEffect(() => {
-        console.log('%c SCM Admin v3.1.0 - Debug Mode Enabled ', 'background: #222; color: #bada55; font-size: 16px; padding: 4px;');
-    }, []);
-
     const [user, setUser] = useState<User | null>(null);
     const [loginForm, setLoginForm] = useState({ username: '', password: '' });
     const [loginError, setLoginError] = useState('');
